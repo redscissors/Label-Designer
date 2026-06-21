@@ -117,3 +117,15 @@ The un-rounded "exact" value is always shown next to the rounded order quantity.
   serverless function (Netlify Function / Supabase Edge Function); the browser
   calls that function, never Anthropic directly. Restrict who can trigger it
   (accounts are already admin-only) and set a spend cap.
+
+Issue tracker
+Issues live as local markdown files under `.scratch/NNN_<slug>/` (numbered group directories — see `docs/agents/issue-tracker.md`).
+When you complete an issue, update its `Status:` field to `done` before committing.
+Triage labels
+Default canonical label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+Domain docs
+The project's north star lives at `docs/project-charter.md` (what it is, pillars, non-goals); the domain glossary lives at `docs/CONTEXT.md`; functional docs live under `docs/<area>/`. See `docs/agents/domain.md`.
+Design decisions
+Decisions that are hard to reverse, surprising, or trade-off-bearing are recorded as ADRs under `docs/adr/` (system-wide) or `docs/<area>/adr/` (area-scoped), indexed in `docs/adr/README.md`. When a decision lands mid-conversation, use `/decide` to record it and check it against the charter, glossary, and existing ADRs; use `/design-review` for a full pre-implementation grilling. Before contradicting a recorded decision or the charter, surface the conflict rather than silently overriding it.
+Code Comments
+Be very conservative with comments. Do not explain code that an experienced developer can understand by reading it. Comments should be rare and reserved for non-obvious business rules, surprising constraints, external system quirks, workarounds, or decisions that would look wrong without context. Prefer deleting comments unless they prevent a likely misunderstanding.
