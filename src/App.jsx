@@ -50,9 +50,13 @@ export default function App({ user, onSignOut }) {
   const [focusArea, setFocusArea] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isWide, setIsWide] = useState(() => typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(min-width: 768px)").matches : true);
+  const [namingVersion, setNamingVersion] = useState(false);
+  const [versionName, setVersionName] = useState("");
+  const [saveOk, setSaveOk] = useState(false);
   const fileRef = useRef(null);
   const attRef = useRef(null);
   const areaRefs = useRef({});
+  const saveOkTimer = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -68,7 +72,7 @@ export default function App({ user, onSignOut }) {
   useEffect(() => { if (focusArea && areaRefs.current[focusArea]) { const el = areaRefs.current[focusArea]; el.focus(); el.select?.(); el.scrollIntoView?.({ behavior: "smooth", block: "center" }); setFocusArea(null); } }, [focusArea, data]);
   useEffect(() => { const mq = window.matchMedia("(min-width: 768px)"); const on = () => setIsWide(mq.matches); on(); mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on); return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); }; }, []);
 
-  const persist = async (next) => { setData(next); try { const { error } = await supabase.from("app_data").upsert({ user_id: user.id, data: next }, { onConflict: "user_id" }); if (error) throw error; } catch (e) { ping("Save failed — export a backup"); } };
+  const persist = async (next) => { setData(next); try { const { error } = await supabase.from("app_data").upsert({ user_id: user.id, data: next }, { onConflict: "user_id" }); if (error) throw error; if (saveOkTimer.current) clearTimeout(saveOkTimer.current); setSaveOk(true); saveOkTimer.current = setTimeout(() => setSaveOk(false), 2000); } catch (e) { ping("Save failed — export a backup"); } };
   const ping = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
   const setSettings = (patch) => persist({ ...data, settings: { ...data.settings, ...patch } });
   const settings = data.settings;
@@ -90,7 +94,8 @@ export default function App({ user, onSignOut }) {
   const openAttachment = async (m) => { try { const { data: blob, error } = await supabase.storage.from(ATT_BUCKET).download(attPath(m.id)); if (error) throw error; const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = m.name; a.click(); URL.revokeObjectURL(u); } catch (x) { ping("Could not load attachment"); } };
   const delAttachment = async (m) => { try { await supabase.storage.from(ATT_BUCKET).remove([attPath(m.id)]); } catch (x) { } updateCust(sel.id, { attachments: (sel.attachments || []).filter((x) => x.id !== m.id) }); };
 
-  const saveVersion = () => { const label = (typeof prompt === "function" && prompt("Name this version")) || `Version ${(sel.versions?.length || 0) + 1}`; updateCust(sel.id, { versions: [{ id: uid(), label, savedAt: Date.now(), snapshot: JSON.parse(JSON.stringify(sel.categories)) }, ...(sel.versions || [])] }); ping("Version saved"); };
+  const startVersionName = () => { setVersionName(`Version ${(sel.versions?.length || 0) + 1}`); setNamingVersion(true); };
+  const confirmVersion = () => { const label = versionName.trim() || `Version ${(sel.versions?.length || 0) + 1}`; updateCust(sel.id, { versions: [{ id: uid(), label, savedAt: Date.now(), snapshot: JSON.parse(JSON.stringify(sel.categories)) }, ...(sel.versions || [])] }); setNamingVersion(false); setVersionName(""); ping("Version saved"); };
   const loadVersion = (v) => { updateCust(sel.id, { categories: JSON.parse(JSON.stringify(v.snapshot)) }); setShowVersions(false); ping("Version loaded"); };
   const delVersion = (vid) => updateCust(sel.id, { versions: sel.versions.filter((v) => v.id !== vid) });
 
@@ -117,44 +122,6 @@ export default function App({ user, onSignOut }) {
 
   return (
     <div className="h-screen bg-slate-50 text-slate-800 flex flex-col" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
-      <style>{`
-:root{--ft-cream:#f5f1e6;--ft-card:#fffdf7;--ft-prod:#faf6ec;--ft-border:#e6ddc9;--ft-border-soft:#efe7d6;--ft-border-strong:#d8cfb8;--ft-text:#3f463a;--ft-muted:#8c9181;--ft-accent:#7d9b77;--ft-accent-press:#6d8a67;--ft-accent-deep:#5f7d5a;--ft-tint:#e9efe2;--ft-tint-border:#cfe0c6;--ft-deep:#4f6b49;}
-.bg-slate-50{background-color:var(--ft-cream);}
-.bg-white{background-color:var(--ft-card);}
-.bg-slate-50\\/50{background-color:var(--ft-prod);}
-.bg-indigo-600{background-color:var(--ft-accent);}
-.bg-indigo-50{background-color:var(--ft-tint);}
-.bg-indigo-50\\/40{background-color:var(--ft-tint);}
-.bg-indigo-100{background-color:var(--ft-tint);}
-.bg-slate-900{background-color:var(--ft-deep);}
-.bg-slate-100{background-color:#ece6d7;}
-.bg-slate-200{background-color:#ddd5c2;}
-.text-slate-800{color:var(--ft-text);}
-.text-slate-900{color:#343a30;}
-.text-slate-700{color:#54594b;}
-.text-slate-600{color:#6f7464;}
-.text-slate-500{color:var(--ft-muted);}
-.text-slate-400{color:#a3a892;}
-.text-slate-300{color:#c4c7b6;}
-.text-indigo-400,.text-indigo-500,.text-indigo-600,.text-indigo-700{color:var(--ft-accent-deep);}
-.border-slate-200{border-color:var(--ft-border);}
-.border-slate-100{border-color:var(--ft-border-soft);}
-.border-slate-300{border-color:var(--ft-border-strong);}
-.border-indigo-200{border-color:var(--ft-tint-border);}
-.border-indigo-300{border-color:#b9cdb0;}
-.ring-indigo-200{--tw-ring-color:var(--ft-tint-border);}
-.ring-indigo-500{--tw-ring-color:var(--ft-accent);}
-.hover\\:bg-slate-50:hover{background-color:#efe9da;}
-.hover\\:bg-indigo-700:hover{background-color:var(--ft-accent-press);}
-.hover\\:text-indigo-700:hover{color:#4f6d4a;}
-.hover\\:border-slate-200:hover{border-color:var(--ft-border);}
-.hover\\:text-slate-600:hover{color:#54594b;}
-.focus\\:ring-indigo-500:focus{--tw-ring-color:var(--ft-accent);}
-.placeholder\\:text-slate-300::placeholder{color:#bdc0af;}
-.ft-rail{background-color:#efe8d7;}
-@media print{ @page{ margin:1.4cm } body{ -webkit-print-color-adjust:exact; print-color-adjust:exact } .bg-slate-50{background-color:#fff;} }
-`}</style>
-
       <div className={`print:hidden flex ${isWide ? "flex-row" : "flex-col"} flex-1 overflow-hidden relative`}>
         {/* Mobile top bar */}
         {!isWide && (
@@ -197,6 +164,7 @@ export default function App({ user, onSignOut }) {
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-semibold shrink-0">{(user.email || "?").slice(0, 1).toUpperCase()}</div>
               <span className="truncate flex-1" title={user.email}>{user.email}</span>
+              <span className="w-px h-4 bg-slate-200 shrink-0" />
               <button onClick={onSignOut} title="Sign out" className="rounded-md border border-slate-200 hover:bg-slate-50 p-1.5 text-slate-500"><LogOut size={14} /></button>
             </div>
           </div>
@@ -213,9 +181,20 @@ export default function App({ user, onSignOut }) {
           ) : (
             <div className="max-w-4xl mx-auto p-3 md:p-5">
               <div className="flex items-start justify-between gap-3 mb-4">
-                <input value={sel.name} onChange={(e) => updateCust(sel.id, { name: e.target.value })} className="text-xl md:text-2xl font-semibold tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 focus:outline-none flex-1 pb-1 min-w-0" />
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <input value={sel.name} onChange={(e) => updateCust(sel.id, { name: e.target.value })} className="text-xl md:text-2xl font-semibold tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 focus:outline-none pb-1 min-w-0 flex-1" />
+                  {saveOk && <span className="text-xs text-indigo-600 font-medium whitespace-nowrap">Saved ✓</span>}
+                </div>
                 <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                  <button onClick={saveVersion} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><Save size={15} /> Version</button>
+                  {namingVersion ? (
+                    <div className="flex items-center gap-1">
+                      <input autoFocus value={versionName} onChange={(e) => setVersionName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmVersion(); if (e.key === "Escape") setNamingVersion(false); }} className="text-sm rounded-md border border-slate-200 px-2 py-1.5 w-32 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      <button onClick={confirmVersion} className="flex items-center gap-1 text-sm rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5"><Check size={15} /></button>
+                      <button onClick={() => setNamingVersion(false)} className="rounded-md border border-slate-200 hover:bg-slate-50 px-2 py-1.5 text-slate-400"><X size={15} /></button>
+                    </div>
+                  ) : (
+                    <button onClick={startVersionName} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><Save size={15} /> Version</button>
+                  )}
                   <button onClick={() => setShowVersions(true)} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><History size={15} /> {(sel.versions?.length || 0)}</button>
                   <button onClick={exportCSV} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><FileText size={15} /> CSV</button>
                   <button onClick={() => window.print()} className="flex items-center gap-1.5 text-sm rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5"><Printer size={15} /> Print</button>

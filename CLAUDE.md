@@ -85,9 +85,11 @@ The un-rounded "exact" value is always shown next to the rounded order quantity.
   Keep that single write path; don't write to Supabase ad hoc.
 - `normC/normA/normP` and `mergeSettings` normalize loaded/imported data — extend
   these when adding fields so old records stay valid.
-- The Sage & Cream theme works by **overriding Tailwind's slate/indigo classes**
-  in the `<style>` block. Reuse existing utility classes rather than inventing
-  new colors.
+- The theme (monochrome, inspired by matthaeusjandl.com) works by **overriding
+  Tailwind's slate/indigo classes**. These overrides live in `src/index.css` so
+  the login screen (`Auth.jsx`) and the app share one palette. Reuse existing
+  utility classes rather than inventing new colors; adjust the `--ft-*` variables
+  in `index.css` to retheme.
 
 ## Not yet implemented
 
