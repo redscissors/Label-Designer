@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Growth Report — Dev Dossier</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --panel: #1c2230;
+    --panel-2: #232b3a;
+    --line: #2d3648;
+    --ink: #e6edf3;
+    --ink-soft: #aeb9c8;
+    --ink-dim: #768091;
+    --judgment: #8b7cff;
+    --judgment-soft: #2a2547;
+    --project: #4fc3a1;
+    --project-soft: #1d3a33;
+    --owned: #3fb950;
+    --assisted: #d6a23b;
+    --carried: #e0556b;
+    --review: #e8835a;
+    --review-soft: #3a2519;
+    --gold: #e6b84f;
+    --shadow: 0 8px 28px rgba(0,0,0,.35);
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 80% -10%, #1b2540 0%, var(--bg) 55%);
+    color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 0 0 80px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    margin-top: 40px;
+    padding: 34px 36px;
+    border-radius: 22px;
+    background:
+      linear-gradient(135deg, rgba(139,124,255,.18), rgba(79,195,161,.12)),
+      var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(400px 200px at 90% 0%, rgba(230,184,79,.10), transparent 70%);
+    pointer-events: none;
+  }
+  .hero .kicker {
+    text-transform: uppercase; letter-spacing: .18em; font-size: 11px;
+    color: var(--ink-dim); font-weight: 700; margin-bottom: 10px;
+  }
+  .hero h1 { margin: 0; font-size: 34px; line-height: 1.1; letter-spacing: -.5px; }
+  .hero h1 .spark { color: var(--gold); }
+  .hero .sub { color: var(--ink-soft); margin-top: 12px; max-width: 640px; font-size: 15px; }
+  .hero .meta { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-size: 12px; padding: 5px 11px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-soft);
+  }
+  .chip.live { color: var(--project); border-color: var(--project-soft); }
+
+  /* ---------- Section headers ---------- */
+  .section-title {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 46px 0 4px; font-size: 13px; text-transform: uppercase;
+    letter-spacing: .14em; color: var(--ink-dim); font-weight: 700;
+  }
+  .section-title .count { color: var(--ink-dim); font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 12px; }
+  .section-lead { color: var(--ink-soft); margin: 0 0 18px; font-size: 14px; max-width: 720px; }
+
+  /* ---------- Stat tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 26px; }
+  .tile {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 18px 16px;
+  }
+  .tile .n { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+  .tile .l { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+  .tile .hint { font-size: 11px; color: var(--ink-dim); margin-top: 8px; }
+
+  /* ---------- Verdict bar ---------- */
+  .verdict-card {
+    margin-top: 14px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px 22px;
+  }
+  .verdict-card h3 { margin: 0 0 4px; font-size: 15px; }
+  .verdict-card p { margin: 0 0 16px; color: var(--ink-soft); font-size: 13px; }
+  .vbar { display: flex; height: 30px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+  .vbar > span { display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #0d1117; }
+  .vbar .v-owned { background: var(--owned); }
+  .vbar .v-assisted { background: var(--assisted); }
+  .vbar .v-carried { background: var(--carried); }
+  .vbar .v-none { background: var(--panel-2); color: var(--ink-dim); }
+  .vlegend { display: flex; gap: 18px; margin-top: 12px; font-size: 12px; color: var(--ink-soft); flex-wrap: wrap; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+
+  /* ---------- Concept grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+
+  /* ---------- Compact board (cold-start seeds) ---------- */
+  .board { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .board-group-head {
+    display: flex; align-items: center; gap: 9px; padding: 13px 18px 11px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: var(--ink-dim);
+    background: var(--bg-soft); border-bottom: 1px solid var(--line);
+  }
+  .board-group-head .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .board-group-head.judgment .swatch { background: var(--judgment); }
+  .board-group-head.project .swatch { background: var(--project); }
+  .board-group-head .gh-note { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--ink-dim); font-size: 11px; }
+  .brow { display: flex; align-items: center; gap: 14px; padding: 13px 18px; border-bottom: 1px solid var(--line); }
+  .brow:last-child { border-bottom: none; }
+  .brow .bmain { flex: 1; min-width: 0; }
+  .brow .bname { font-size: 13.5px; font-weight: 700; }
+  .brow .bnote { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .brow .bmini { display: flex; gap: 3px; flex-shrink: 0; }
+  .brow .bmini i { width: 16px; height: 5px; border-radius: 2px; background: var(--panel-2); }
+  .brow.judgment .bmini i.on { background: var(--judgment); }
+  .brow.project .bmini i.on { background: var(--project); }
+  .brow .blvl { font-size: 11px; color: var(--ink-dim); width: 78px; flex-shrink: 0; text-align: right; }
+  .seed-foot { padding: 12px 18px; font-size: 12px; color: var(--ink-dim); background: var(--bg-soft); border-top: 1px solid var(--line); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 18px 16px; position: relative; display: flex; flex-direction: column;
+  }
+  .card.axis-judgment { border-top: 3px solid var(--judgment); }
+  .card.axis-project { border-top: 3px solid var(--project); }
+  .card.spotlight { box-shadow: 0 0 0 1px var(--gold), var(--shadow); }
+  .card .row1 { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .card h4 { margin: 0; font-size: 15px; letter-spacing: -.2px; }
+  .card .gloss { color: var(--ink-dim); font-size: 12px; margin-top: 3px; }
+
+  .badges { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .pill { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; letter-spacing: .02em; }
+  .pill.confirmed { background: rgba(63,185,80,.16); color: #7ee495; border: 1px solid rgba(63,185,80,.35); }
+  .pill.provisional { background: transparent; color: var(--ink-dim); border: 1px dashed var(--line); }
+  .pill.seed { background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line); }
+  .pill.v-owned { background: rgba(63,185,80,.16); color: #7ee495; }
+  .pill.v-assisted { background: rgba(214,162,59,.16); color: var(--assisted); }
+  .pill.v-carried { background: rgba(224,85,107,.16); color: var(--carried); }
+  .pill.flag { background: rgba(230,184,79,.14); color: var(--gold); border: 1px solid rgba(230,184,79,.35); }
+
+  /* rank ladder */
+  .ladder { display: flex; align-items: center; gap: 8px; margin: 16px 0 4px; }
+  .pips { display: flex; gap: 4px; }
+  .pip { width: 26px; height: 6px; border-radius: 3px; background: var(--panel-2); }
+  .axis-judgment .pip.on { background: var(--judgment); }
+  .axis-project .pip.on { background: var(--project); }
+  .rank-label { font-size: 12px; font-weight: 700; color: var(--ink); text-transform: capitalize; }
+  .rank-scale { font-size: 10px; color: var(--ink-dim); margin-left: auto; }
+
+  .card .gap { font-size: 12.5px; color: var(--ink-soft); margin: 10px 0 0; }
+  .card .next {
+    font-size: 12.5px; color: var(--ink-soft); margin-top: 12px; padding-top: 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .card .next b { color: var(--ink); }
+  .card .ledger { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .ledger .ev { font-size: 10.5px; color: var(--ink-dim); background: var(--bg-soft); border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; }
+  .ledger .ev b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---------- spotlight blocks ---------- */
+  .spot { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; }
+  .spot.growth { border-left: 4px solid var(--gold); }
+  .spot.win { border-left: 4px solid var(--owned); }
+  .spot h3 { margin: 0 0 6px; font-size: 16px; }
+  .spot .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; }
+  .spot.growth .tag { color: var(--gold); }
+  .spot.win .tag { color: var(--owned); }
+  .spot p { color: var(--ink-soft); font-size: 13.5px; margin: 8px 0 0; }
+  .spot p:first-of-type { margin-top: 10px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .watch { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 4px; }
+  .watch .item { display: flex; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .watch .item:last-child { border-bottom: none; }
+  .watch .ic { font-size: 18px; flex-shrink: 0; width: 22px; text-align: center; }
+  .watch .t { font-weight: 700; font-size: 13.5px; }
+  .watch .d { color: var(--ink-soft); font-size: 12.5px; margin-top: 2px; }
+
+  /* ---------- Senior-review escalations ---------- */
+  .rev { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--review);
+         border-radius: var(--radius); padding: 18px 20px; margin-top: 14px; }
+  .rev .rtag { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase;
+               letter-spacing: .1em; font-weight: 700; color: var(--review); }
+  .rev .rtag .concept { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600;
+               font-size: 11px; color: var(--ink-dim); background: var(--bg-soft); border: 1px solid var(--line);
+               padding: 2px 8px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .rev h4 { margin: 9px 0 0; font-size: 15px; letter-spacing: -.2px; }
+  .rev > p { color: var(--ink-soft); font-size: 13px; margin: 8px 0 0; }
+  .rev .readings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .reading { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+  .reading .rl { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+  .reading.accept { border-color: rgba(63,185,80,.3); }
+  .reading.reject { border-color: rgba(224,85,107,.3); }
+  .reading.accept .rl { color: #7ee495; }
+  .reading.reject .rl { color: var(--carried); }
+  .reading p { font-size: 12px; color: var(--ink-soft); margin: 5px 0 0; }
+  .rev .why { margin-top: 14px; padding-top: 11px; border-top: 1px dashed var(--line); font-size: 11.5px; color: var(--ink-dim); }
+  .rev .why b { color: var(--ink-soft); font-weight: 600; }
+  /* expandable variant */
+  details.rev { padding: 0; overflow: hidden; }
+  details.rev > summary { list-style: none; cursor: pointer; display: block; position: relative; padding: 16px 44px 16px 20px; }
+  details.rev > summary::-webkit-details-marker { display: none; }
+  details.rev > summary:hover { background: rgba(255,255,255,.02); }
+  details.rev .chev { position: absolute; right: 18px; top: 17px; color: var(--ink-dim); font-size: 15px; transition: transform .15s ease; }
+  details.rev[open] .chev { transform: rotate(90deg); }
+  details.rev .overview { color: var(--ink-soft); font-size: 12.5px; margin: 6px 0 0; }
+  .rev-body { padding: 16px 20px 18px; border-top: 1px solid var(--line); }
+  .rev-body h5 { margin: 15px 0 0; font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-dim); font-weight: 700; }
+  .rev-body h5:first-child { margin-top: 0; }
+  .rev-body p { font-size: 12.5px; color: var(--ink-soft); margin: 5px 0 0; }
+  .rev-body code { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+  .pos .p { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; }
+  .pos .p .h { font-weight: 700; font-size: 12px; color: var(--ink); margin-bottom: 4px; }
+  .pos .p p { margin-top: 0; }
+  .decide { margin-top: 15px; background: var(--review-soft); border: 1px solid rgba(232,131,90,.3); border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: var(--ink-soft); }
+  .decide .dl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; color: var(--review); margin-bottom: 4px; }
+
+  footer { margin-top: 50px; color: var(--ink-dim); font-size: 12px; text-align: center; line-height: 1.7; }
+  footer .lock { color: var(--ink-soft); }
+
+  @media (max-width: 760px) {
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .grid, .two { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 27px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <div class="kicker">Mentor · Growth Report</div>
+    <h1>Where you're at <span class="spark">&#9889;</span></h1>
+    <p class="sub">
+      A snapshot of every concept you've worked through in a mentored session — what you owned
+      outright, where you had a hand up, and where the next stretch is. Verdicts are the
+      independent assessor's, not the mentor's in-the-moment read. Nothing here is a grade; it's a map.
+    </p>
+    <div class="meta">
+      <span class="chip live">&#9679; Generated 2026-06-12</span>
+      <span class="chip">~17 yrs, self-taught</span>
+      <span class="chip">Angular · NestJS · PostgreSQL · TypeScript</span>
+      <span class="chip">Senior dev · PM · DevOps</span>
+      <span class="chip">ERP / logistics domain</span>
+    </div>
+  </header>
+
+  <!-- ===================== AT A GLANCE ===================== -->
+  <div class="section-title">At a glance</div>
+  <div class="tiles">
+    <div class="tile">
+      <div class="n">16</div>
+      <div class="l">concepts tracked</div>
+      <div class="hint">10 judgment · 6 project</div>
+    </div>
+    <div class="tile">
+      <div class="n" style="color:var(--owned)">3</div>
+      <div class="l">confirmed</div>
+      <div class="hint">held up on a 2nd, independent task</div>
+    </div>
+    <div class="tile">
+      <div class="n" style="color:var(--judgment)">1</div>
+      <div class="l">in active growth</div>
+      <div class="hint">testing-strategy — high leverage</div>
+    </div>
+    <div class="tile">
+      <div class="n">0</div>
+      <div class="l">carried</div>
+      <div class="hint">nothing handed to you wholesale</div>
+    </div>
+  </div>
+
+  <!-- ===================== VERDICT BAR ===================== -->
+  <div class="verdict-card">
+    <h3>Did you own it, or were you carried?</h3>
+    <p>Across every demonstration the assessor could verify from the transcript and diff. The honest
+       headline: you're driving, occasionally with a hand on the wheel — never a passenger.</p>
+    <div class="vbar">
+      <span class="v-owned" style="width:57%">Owned · 4</span>
+      <span class="v-assisted" style="width:43%">Assisted · 3</span>
+      <span class="v-none" style="width:0%; min-width:0;"></span>
+    </div>
+    <div class="vlegend">
+      <span><i class="dot" style="background:var(--owned)"></i>Owned — you reasoned to it unaided</span>
+      <span><i class="dot" style="background:var(--assisted)"></i>Assisted — a hint or worked example unblocked you</span>
+      <span><i class="dot" style="background:var(--carried)"></i>Carried — supplied to you (none so far)</span>
+    </div>
+  </div>
+
+  <!-- ===================== IN FOCUS ===================== -->
+  <div class="section-title">In focus <span class="count">— confirmed on real work, or the next thing to chase</span></div>
+  <p class="section-lead">The concepts that have earned a close look: three that held up on a second, independent
+     task (<span style="color:var(--judgment)">&#9679; judgment</span> &nbsp;
+     <span style="color:var(--project)">&#9679; project</span>), plus the one clear growth edge.</p>
+
+  <div class="grid">
+
+    <!-- abstraction-coupling -->
+    <div class="card axis-judgment">
+      <div class="row1">
+        <div>
+          <h4>abstraction-coupling</h4>
+          <div class="gloss">coupling/cohesion, when to extract vs inline</div>
+        </div>
+        <div class="badges">
+          <span class="pill confirmed">Confirmed &#10003;</span>
+          <span class="pill v-owned">Owned</span>
+        </div>
+      </div>
+      <div class="ladder">
+        <div class="pips"><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></div>
+        <span class="rank-label">competent</span>
+        <span class="rank-scale">developing · competent · proficient · advanced</span>
+      </div>
+      <p class="gap">Owned the call unaided on a real design task: rejected infra-decoupling with no cadence to
+         decouple from, and kept asset-serving in the domain-owning deployable — cohesion over convenience.</p>
+      <div class="ledger">
+        <span class="ev"><b>cold-start</b> owned · 06-11</span>
+        <span class="ev"><b>release-note-images</b> owned · 06-11</span>
+      </div>
+      <p class="next"><b>Next:</b> confirmed across two owned exchanges. To push past competent, the
+         assessor needs to see it transfer into varied problem domains.</p>
+    </div>
+
+    <!-- error-handling-strategy -->
+    <div class="card axis-judgment">
+      <div class="row1">
+        <div>
+          <h4>error-handling-strategy</h4>
+          <div class="gloss">idempotency, leases, fencing, at-least-once + dedup</div>
+        </div>
+        <div class="badges">
+          <span class="pill confirmed">Confirmed &#10003;</span>
+          <span class="pill v-owned">Owned</span>
+          <span class="pill flag">under-credited</span>
+        </div>
+      </div>
+      <div class="ladder">
+        <div class="pips"><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></div>
+        <span class="rank-label">competent</span>
+        <span class="rank-scale">developing · competent · proficient · advanced</span>
+      </div>
+      <p class="gap">On the printer-exactly-once design you traced the crash failure-window, designed the
+         separate-process heartbeat (the monitor must not share fate with what it monitors), and wrote the
+         correct dead-job predicate — all unaided. The split-brain residual window and fencing-for-attribution
+         were supplied, not yet owned.</p>
+      <div class="ledger">
+        <span class="ev"><b>cold-start</b> assisted · 06-11</span>
+        <span class="ev"><b>printer</b> owned · 06-12</span>
+        <span class="ev"><b>printer</b> assisted · 06-12</span>
+      </div>
+      <p class="next"><b>Next:</b> both wins sit in the same distributed-coordination family — re-touch on a
+         different problem domain to prove transfer, and re-test the still-assisted residual-window material.</p>
+    </div>
+
+    <!-- security-input-trust -->
+    <div class="card axis-judgment">
+      <div class="row1">
+        <div>
+          <h4>security-input-trust</h4>
+          <div class="gloss">authn vs authz, trust the token's provenance not request params</div>
+        </div>
+        <div class="badges">
+          <span class="pill confirmed">Confirmed &#10003;</span>
+          <span class="pill v-owned">Owned</span>
+        </div>
+      </div>
+      <div class="ladder">
+        <div class="pips"><i class="pip on"></i><i class="pip on"></i><i class="pip"></i><i class="pip"></i></div>
+        <span class="rank-label">competent</span>
+        <span class="rank-scale">developing · competent · proficient · advanced</span>
+      </div>
+      <p class="gap">Needed one nudge at cold-start to move from generic input-validation to authz-derivation;
+         on recurrence you reached the trust-the-bytes-provenance distinction unaided (untrusted external
+         image bytes vs. the trusted author of the markdown).</p>
+      <div class="ledger">
+        <span class="ev"><b>cold-start</b> assisted · 06-11</span>
+        <span class="ev"><b>release-note-images</b> owned · 06-11</span>
+      </div>
+      <p class="next"><b>Next:</b> the authN-vs-authZ-per-action layer is the next stretch.</p>
+    </div>
+
+    <!-- testing-strategy (growth) -->
+    <div class="card axis-judgment spotlight">
+      <div class="row1">
+        <div>
+          <h4>testing-strategy</h4>
+          <div class="gloss">a test's value = the failure it catches</div>
+        </div>
+        <div class="badges">
+          <span class="pill flag">growth edge</span>
+          <span class="pill provisional">provisional</span>
+        </div>
+      </div>
+      <div class="ladder">
+        <div class="pips"><i class="pip on"></i><i class="pip"></i><i class="pip"></i><i class="pip"></i></div>
+        <span class="rank-label">developing</span>
+        <span class="rank-scale">developing · competent · proficient · advanced</span>
+      </div>
+      <p class="gap">The one area you recalibrated <i>down</i> mid-quiz: the correct kernel is there
+         ("is it actually testing something?") but the hollow-test shapes were hard to articulate, and
+         tests are mostly AI-written today.</p>
+      <p class="next"><b>Next:</b> the single highest-leverage investment on the board. A dedicated session
+         on test value + spotting over-mock / implementation-assertion would pay off fast.</p>
+    </div>
+
+  </div>
+
+  <!-- ===================== THE REST OF THE BOARD ===================== -->
+  <div class="section-title">The rest of the board <span class="count">— calibrated from the cold-start quiz</span></div>
+  <p class="section-lead">These came out of your calibration quiz — strong reads, but <b>provisional</b> until they
+     recur on real work. They confirm naturally as you hit tasks that touch them; nothing to action here beyond
+     doing the work. All sit at <b>competent</b> unless noted.</p>
+
+  <div class="board">
+
+    <div class="board-group-head judgment">
+      <span class="swatch"></span> Judgment axis
+      <span class="gh-note">transferable engineering schema</span>
+    </div>
+
+    <div class="brow judgment">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">async-concurrency</div>
+        <div class="bnote">Ran <i>above</i> the cap unaided — optimistic CAS, atomic commutative updates,
+           intent/delta generalization. Likely promotes the moment it recurs.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow judgment">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">caching-invalidation</div>
+        <div class="bnote">Owned the full spectrum (LISTEN/NOTIFY, invalidate-on-mutation, TTL) + the
+           staleness-vs-cost tradeoff; only a name fix and two race gotchas added.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow judgment">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">data-modeling-normalization</div>
+        <div class="bnote">Owned read-perf denormalization; gap was temporal-snapshot-as-distinct-fact
+           (price-at-purchase frozen in time, not drift-prone duplication).</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow judgment">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">api-contract-design</div>
+        <div class="bnote">Owned additive/optional + versioning and that a required-field add is breaking;
+           only the expand-contract retirement half was added.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow judgment">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">transaction-boundaries</div>
+        <div class="bnote">Owned same-DB unit-of-work and that atomicity can't cross a network call;
+           saga/outbox/compensation names were supplied.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow judgment">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">dependency-injection</div>
+        <div class="bnote">Anchored on container overhead, then self-corrected to substitutability (test seam /
+           side-effects) and added a TS module-mock nuance.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="board-group-head project">
+      <span class="swatch"></span> Project axis
+      <span class="gh-note">this system's conventions</span>
+    </div>
+
+    <div class="brow project">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">org-multitenancy-request-scoping</div>
+        <div class="bnote">Owned the full trace — Branch, org-id header validated vs JWT-allowed orgs, RLS at the
+           row; only the is_keim_user/filter_by_org detail was added.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow project">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">test-config-conventions</div>
+        <div class="bnote">Fully owned the spec/integration split + no-parallelism rationale; volunteered the
+           transactional-fixture fix. (Infra grasp is solid — distinct from the test-<i>quality</i> edge above.)</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow project">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">nx-library-boundaries</div>
+        <div class="bnote">Owned all four placements; couldn't name the enforcement mechanism
+           (@nx/enforce-module-boundaries eslint via project tags).</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow project">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">migration-generation-discipline</div>
+        <div class="bnote">Documented CLAUDE.md rule, fully recalled — generate via nx, strip unrelated schema noise.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow project">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">domain-vocabulary-precision &nbsp;<span class="pill flag" style="vertical-align:middle">reversal in your favor</span></div>
+        <div class="bnote">Owned the vocabulary precisely — the mentor's "used an avoided synonym" read was
+           <b>reversed</b> on your objection; you'd named "Design" correctly all along.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="brow project">
+      <div class="bmini"><i class="on"></i><i class="on"></i><i></i><i></i></div>
+      <div class="bmain">
+        <div class="bname">transaction-wrapper-rls-scoping &nbsp;<span class="pill flag" style="vertical-align:middle">doc candidate</span></div>
+        <div class="bnote">Owned the transaction-local core; couldn't recall specifics or the
+           pooled-connection-bleed rationale. Pattern is code-only — worth an ADR.</div>
+      </div>
+      <div class="blvl">competent</div>
+    </div>
+
+    <div class="seed-foot">12 concepts · all provisional · 4-pip ladder shows developing → competent → proficient → advanced</div>
+  </div>
+
+  <!-- ===================== SPOTLIGHTS ===================== -->
+  <div class="section-title">The story behind the numbers</div>
+  <div class="two" style="margin-top:18px;">
+    <div class="spot win">
+      <div class="tag">Standout session</div>
+      <h3>The printer-exactly-once design</h3>
+      <p>You drove three distinct sub-problems unaided: traced exactly what a hard crash leaves behind in the
+         job row, designed a separate-process heartbeat (correctly reasoning the monitor must not share fate with
+         what it watches), and wrote the load-bearing dead-job predicate from first principles.</p>
+      <p>The mentor supplied the formal impossibility result (exactly-once delivery is unachievable) and the
+         fencing-for-attribution layer — and on one point conceded to <i>your</i> better grounding rather than
+         the other way around. That recurrence is what promoted error-handling to <b>confirmed</b>.</p>
+    </div>
+    <div class="spot growth">
+      <div class="tag">Where to invest next</div>
+      <h3>Test-quality judgment</h3>
+      <p>This is the clearest growth edge on the board, and you spotted it yourself — recalibrating down
+         mid-quiz when the hollow-test shapes were hard to name. That kind of honest self-correction is exactly
+         why the rest of this report can be trusted.</p>
+      <p>The framing to chase: <b>a test's value is the failure it would catch.</b> A focused session on spotting
+         over-mocking and implementation-assertion (the shapes AI-written tests skew toward) would move this
+         needle fastest of anything here.</p>
+    </div>
+  </div>
+
+  <!-- ===================== SENIOR REVIEW ===================== -->
+  <div class="section-title">Worth a senior's eye <span class="count">— 5 open items only you can see</span></div>
+  <p class="section-lead">The assessor couldn't settle these on its own, so it left them <b>open</b> for a human.
+     They're dev-local — no PM or senior read path — and they stay here until resolved. If you're a senior (or have one
+     looking over your shoulder), <code>/mentor-report</code> can walk you through them one at a time, behind a one-time
+     check that you're acting with a senior's authority. Resolving writes shared truth (rules, ADRs, the concept
+     registry) directly — but anything that would touch your <i>own</i> competency model, like revoking credit for a
+     lesson ruled wrong, is never written here; it's left for the assessor to apply on its next pass. Expand each for
+     enough detail to make the call.</p>
+
+  <!-- A: high-risk correctness residue -->
+  <details class="rev">
+    <summary>
+      <span class="chev">&#9656;</span>
+      <div class="rtag">&#9888; Rests on mentor judgment alone <span class="concept">error-handling-strategy</span></div>
+      <h4>Advisory-lock leader election for the dead-job monitor</h4>
+      <p class="overview">The mentor proposed a Postgres advisory lock as a single-leader primitive — taught from
+         memory, no source, and the assessor couldn't confirm it's the right call here.</p>
+    </summary>
+    <div class="rev-body">
+      <h5>What was taught</h5>
+      <p>"Run the dead-job monitor under a Postgres <code>pg_advisory_lock</code> so that if two monitor instances
+         are ever live, only the lock-holder scans for stalled jobs and re-queues them — otherwise both could flag the
+         same job and trigger duplicate human alerts (or duplicate re-prints)."</p>
+      <h5>Why the assessor flagged it</h5>
+      <p>The claim is sound <i>in general</i>, but the mentor taught it from own judgment with no source or project
+         rule reachable in-session, and the assessor couldn't verify it's warranted for <i>our</i> topology. If the
+         monitor runs as a single replica (which the deploy may already guarantee), the lock is dead weight; if it can
+         scale out, something is needed — but <code>SELECT … FOR UPDATE SKIP LOCKED</code> over the job rows may be the
+         simpler primitive than a global advisory lock.</p>
+      <h5>To rule on it, check</h5>
+      <p>• How many replicas the monitor actually runs in the AKS deploy (single vs. HPA-scaled).<br>
+         • Whether a session-scoped advisory lock survives our pooled connections — same pooled-connection-bleed
+         concern that drives the transaction-local RLS pattern.<br>
+         • Whether per-row <code>SKIP LOCKED</code> claiming covers it without any leader at all.</p>
+      <div class="decide">
+        <div class="dl">Your call</div>
+        Is single-leader election warranted here, or is this over-engineering for a single-replica monitor? If warranted,
+        is an advisory lock the right primitive, or <code>SKIP LOCKED</code> row claiming?
+      </div>
+      <div class="why"><b>Provenance:</b> own_judgment · <b>correctness:</b> unverified · <b>escalate:</b> true
+         · session printer-exactly-once, 2026-06-12.</div>
+    </div>
+  </details>
+
+  <!-- B: unresolved dispute -->
+  <details class="rev">
+    <summary>
+      <span class="chev">&#9656;</span>
+      <div class="rtag">&#9878; Disagreement neither side could ground <span class="concept">security-input-trust</span></div>
+      <h4>Signed-URL uploads vs. routing image uploads through the API</h4>
+      <p class="overview">You held for signed URLs, the mentor held for API-routed uploads; neither could cite a
+         project standard, so the conviction rule sends it to a human rather than to whoever pushed hardest.</p>
+    </summary>
+    <div class="rev-body">
+      <h5>The two positions</h5>
+      <div class="pos">
+        <div class="p">
+          <div class="h">Dev — signed URLs</div>
+          <p>Client uploads straight to blob storage via a short-lived signed URL. Keeps large image bytes off the
+             API, scales with storage not app servers, fewer moving parts in the request path.</p>
+        </div>
+        <div class="p">
+          <div class="h">Mentor — through the API</div>
+          <p>Upload flows through the API that already owns release-note content gating, so auth, validation, size
+             limits, and content-type checks live in one place instead of being split to a storage-side policy.</p>
+        </div>
+      </div>
+      <h5>Where it stands</h5>
+      <p>Both are defensible. Neither side could point to an existing project standard, and the mentor held its line
+         under your pushback (a <code>conviction_hold</code>) — but per the conviction rule a tie on grounding isn't
+         won by persistence, theirs or yours. The assessor confirmed the hold was reasoned, not stubbornness.</p>
+      <h5>To rule on it, weigh</h5>
+      <p>• Expected image sizes and upload volume for release notes (low → API-routed cost is negligible).<br>
+         • Whether release-note authoring is internal-only (lower threat surface for a direct-upload path).<br>
+         • Any precedent elsewhere in the codebase for how other user-supplied assets are ingested.</p>
+      <div class="decide">
+        <div class="dl">Your call</div>
+        Which pattern is our standard going forward? Whatever you decide becomes the precedent the next similar
+        decision points to — and a candidate <code>custom-rules</code> entry.
+      </div>
+      <div class="why"><b>Flag:</b> conviction_hold · no governing rule found · session release-note-images, 2026-06-11.</div>
+    </div>
+  </details>
+
+  <!-- D: self-healing UPDATE proposal (two readings) -->
+  <details class="rev">
+    <summary>
+      <span class="chev">&#9656;</span>
+      <div class="rtag">&#9851; Committed rule contradicted by code <span class="concept">rule: dto-validation-boundary</span></div>
+      <h4>Rule says DTOs validate at the controller; the release-notes endpoints validate in the service</h4>
+      <p class="overview">A committed rule and the actual code disagree. The assessor drafted one diff that edits
+         the rule and its ADR together — but only a human can rule which side is right.</p>
+    </summary>
+    <div class="rev-body">
+      <h5>The rule as written</h5>
+      <p><code>dto-validation-boundary</code> in <code>docs/tools/rules/custom-rules.md</code>: "Request DTOs are
+         validated by class-validator decorators at the controller boundary; service methods may assume their inputs
+         are already valid."</p>
+      <h5>What the code does</h5>
+      <p>The release-notes endpoints (<code>src/release-notes/*.controller.ts</code>) accept
+         raw DTOs and validate inside the service instead — the controller does no decorator validation.</p>
+      <h5>The drafted fix (one commit, rule + ADR together)</h5>
+      <p>Edits the rule entry <i>and</i> the ADR it references in the same diff, so the <code>check</code> and its
+         rationale can never drift apart — whichever way you rule.</p>
+      <div class="readings">
+        <div class="reading accept">
+          <div class="rl">&#10003; Stale rule &rarr; accept</div>
+          <p>The decorator rule is outdated; service-layer validation is genuinely what we do now. Apply the rule + ADR update.</p>
+        </div>
+        <div class="reading reject">
+          <div class="rl">&#10007; Code violation &rarr; reject</div>
+          <p>The rule is right and the code drifted. Drop the proposal and fix the endpoints to validate at the boundary.</p>
+        </div>
+      </div>
+      <div class="why"><b>Flag:</b> committed rule contradicted by code · the assessor surfaces it, never silently
+         conforms your code to a rule it suspects is stale.</div>
+    </div>
+  </details>
+
+  <!-- C: self-healing ADD proposal -->
+  <details class="rev">
+    <summary>
+      <span class="chev">&#9656;</span>
+      <div class="rtag">&#43; Proposed new rule + ADR — convention seen 2&times; <span class="concept">transaction-wrapper-rls-scoping</span></div>
+      <h4>Codify: tenant-scoped writes must go through TransactionWrapperService</h4>
+      <p class="overview">An uncodified convention the code already follows, seen in two files this session. Nothing
+         currently catches a method that forgets it and leaks across tenants.</p>
+    </summary>
+    <div class="rev-body">
+      <h5>The convention observed</h5>
+      <p>Tenant-scoped writes go through <code>TransactionWrapperService</code>, which sets the transaction-local RLS
+         session vars (<code>app.org_id</code>, <code>app.filter_by_org</code>, <code>app.is_keim_user</code>) so
+         Postgres row-level security scopes the write to the caller's org.</p>
+      <h5>The risk it guards</h5>
+      <p>A service method that writes tenant rows <i>without</i> the wrapper runs with whatever RLS context the pooled
+         connection last held — a silent cross-tenant write or leak. No lint or test catches this today.</p>
+      <h5>The drafted addition</h5>
+      <p>A new <code>custom-rules</code> entry <i>plus</i> a new ADR under <code>docs/tools/adr/</code> capturing the
+         pooled-connection-bleed rationale — the same undocumented pattern your model already flags as a doc candidate.
+         Seen across 2 distinct files this session; a single sighting would not have proposed it.</p>
+      <div class="decide">
+        <div class="dl">Your call</div>
+        Codify and enforce this convention, or leave it uncodified? If codified, is a lint rule enforceable, or does it
+        need a review-time check?
+      </div>
+      <div class="why"><b>Trigger:</b> uncodified convention seen ≥2× · sessions cold-start + printer-exactly-once.</div>
+    </div>
+  </details>
+
+  <!-- E: registry hygiene -->
+  <details class="rev">
+    <summary>
+      <span class="chev">&#9656;</span>
+      <div class="rtag">&#8651; Two concept keys may be one <span class="concept">registry hygiene</span></div>
+      <h4>error-handling-strategy vs. idempotency-patterns</h4>
+      <p class="overview">A near-duplicate concept key was coined this session. If it's really the same concept, your
+         recurrence evidence is split across two ledgers and undercounts.</p>
+    </summary>
+    <div class="rev-body">
+      <h5>The two keys</h5>
+      <div class="pos">
+        <div class="p">
+          <div class="h">error-handling-strategy</div>
+          <p>"fail-fast vs recover, retries/idempotency, at-least-once + dedup, leases, fencing"</p>
+        </div>
+        <div class="p">
+          <div class="h">idempotency-patterns <span style="color:var(--ink-dim);font-weight:400">(new)</span></div>
+          <p>"making repeated operations safe — dedup keys, upserts, at-least-once + idempotent processing"</p>
+        </div>
+      </div>
+      <h5>Why it matters</h5>
+      <p>If they're one concept, demonstrations are landing on two different keys, so neither shows the recurrence
+         needed to promote past <code>provisional</code>. The store never auto-merges — the join stays exact and dumb
+         on purpose — so a human decides.</p>
+      <div class="decide">
+        <div class="dl">Your call</div>
+        Merge them (and which key wins), or keep the distinction because idempotency is genuinely narrower than the
+        whole error-handling family?
+      </div>
+      <div class="why"><b>Trigger:</b> normalized near-collision of two registry keys · low stakes, but visible and mergeable.</div>
+    </div>
+  </details>
+
+  <!-- ===================== WATCH LIST ===================== -->
+  <div class="section-title">Flags &amp; follow-ups</div>
+  <div class="watch" style="margin-top:14px;">
+    <div class="item">
+      <div class="ic">&#127919;</div>
+      <div>
+        <div class="t">error-handling-strategy — under-credited, breadth not yet shown</div>
+        <div class="d">Confirmed, but both demonstrations live in the same distributed-coordination family.
+           Re-touch on a different domain to test transfer; the residual split-brain window is still assisted.</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="ic">&#128221;</div>
+      <div>
+        <div class="t">transaction-wrapper-rls-scoping — documentation candidate</div>
+        <div class="d">The pattern and its pooled-connection-bleed rationale live only in code. Flagged for an
+           ADR or comment so the next person doesn't have to reverse-engineer it.</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="ic">&#128302;</div>
+      <div>
+        <div class="t">Seeded-but-untested concepts</div>
+        <div class="d">Most of the board is calibrated from the cold-start quiz alone — strong reads, but
+           <b>provisional</b> until they recur on real work. They confirm naturally as you hit tasks that touch them;
+           no action needed beyond doing the work.</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="ic">&#128064;</div>
+      <div>
+        <div class="t">Still unprobed (from your profile)</div>
+        <div class="d">RxJS composition depth, change-detection (OnPush/zones), Angular DI hierarchy &amp; HTTP
+           interceptors, and e2e testing (a self-declared genuine gap) haven't surfaced in a session yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="lock">&#128274; Private &amp; dev-local — this is your growth record, not a performance review. There's
+       no PM or senior read path; even the "worth a senior's eye" items surface only here — resolved in-session, or shared if you choose.</div>
+    Verdicts are the independent assessor's, re-derived from transcript spans and the diff — never the mentor's
+    in-the-moment self-tags. "Confirmed" means a concept held up on a second, independent task; everything else is
+    "provisional" until it recurs.
+  </footer>
+
+</div>
+</body>
+</html>

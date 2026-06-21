@@ -1,0 +1,324 @@
+<!doctype html>
+<!--
+  Proposal template for /create-proposal.
+  Copy this file to .scratch/<source-slug>/<proposal-slug>.html and replace every {{TOKEN}}
+  and every region marked "REPLACE:" with content derived from the brainstorm summary.
+  Keep the <style> block verbatim. Delete any section you don't fill, and reorder freely.
+
+  Dynamic building blocks available (all self-contained, no external deps):
+    - CSS-only tabs ......... <div class="tabs"> (used for Today vs Proposed)
+    - Collapsible detail .... <details class="detail"> (let sponsors fold architect depth)
+    - Flow diagram .......... <div class="flow"> with .node / .arrow / .node.alt
+    - Inline SVG ............ paste hand-authored <svg> for anything box-and-arrow can't show
+  Use a diagram wherever a relationship, flow, or before/after is clearer drawn than written.
+  Do NOT add CDN <link>/<script> tags — the file must open standalone and as an attachment.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}} — Proposal for Review</title>
+<style>
+  :root {
+    --ink: #1c2230;
+    --muted: #5a6478;
+    --line: #e3e7ef;
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --accent: #2f5fd1;
+    --accent-soft: #eaf0fc;
+    --sponsor: #1f7a5a;
+    --sponsor-soft: #e7f4ef;
+    --architect: #6a4bb0;
+    --architect-soft: #efeafa;
+    --warn: #b4540a;
+    --warn-soft: #fcf0e6;
+    --radius: 10px;
+    --maxw: 880px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 80px; }
+  header.doc {
+    background: linear-gradient(135deg, #25304a, #1c2230);
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 32px 32px 28px;
+    margin-bottom: 18px;
+  }
+  header.doc .eyebrow {
+    text-transform: uppercase; letter-spacing: .12em; font-size: 12px;
+    color: #aeb9d4; margin: 0 0 8px;
+  }
+  header.doc h1 { margin: 0 0 14px; font-size: 30px; line-height: 1.2; }
+  header.doc .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: #c9d2e6; }
+  header.doc .meta b { color: #fff; font-weight: 600; }
+  .status {
+    display: inline-block; background: #f4c150; color: #3a2c00;
+    font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    padding: 4px 12px; border-radius: 999px; text-transform: uppercase;
+  }
+
+  /* Sticky jump nav between the two audiences */
+  nav.jump {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(246,248,251,.92); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line); padding: 10px 4px; margin-bottom: 8px;
+  }
+  nav.jump a {
+    text-decoration: none; font-size: 13px; font-weight: 600;
+    padding: 6px 12px; border-radius: 999px; color: var(--muted);
+  }
+  nav.jump a.sponsor { background: var(--sponsor-soft); color: var(--sponsor); }
+  nav.jump a.architect { background: var(--architect-soft); color: var(--architect); }
+  nav.jump a.decide { margin-left: auto; background: var(--accent-soft); color: var(--accent); }
+
+  .audience-band { display: flex; align-items: center; gap: 12px; margin: 34px 0 18px; }
+  .audience-band .tag {
+    font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 999px;
+  }
+  .audience-band.sponsor .tag { background: var(--sponsor-soft); color: var(--sponsor); }
+  .audience-band.architect .tag { background: var(--architect-soft); color: var(--architect); }
+  .audience-band h2 { margin: 0; font-size: 22px; }
+  .audience-band .who { margin-left: auto; font-size: 13px; color: var(--muted); }
+
+  section.block {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 22px 26px; margin: 0 0 18px;
+  }
+  section.block > h3 { margin: 0 0 12px; font-size: 17px; display: flex; align-items: baseline; gap: 10px; }
+  section.block p:last-child { margin-bottom: 0; }
+  .lead { font-size: 18px; line-height: 1.6; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; background: #fcfdff; }
+  .card h4 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); }
+
+  .ask { border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; padding: 16px 20px; }
+  .ask h3 { margin-top: 0; }
+
+  ul.clean { margin: 0; padding-left: 20px; }
+  ul.clean li { margin: 6px 0; }
+  .risk-list li::marker { color: var(--warn); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table th, table td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  table th { background: #f1f4fa; font-weight: 600; }
+  table tr:last-child td { border-bottom: none; }
+  .table-scroll { overflow-x: auto; }
+
+  /* --- CSS-only tabs (Today vs Proposed) --- */
+  .tabs > input { position: absolute; opacity: 0; pointer-events: none; }
+  .tabs > label {
+    display: inline-block; cursor: pointer; font-size: 14px; font-weight: 600;
+    padding: 7px 16px; border: 1px solid var(--line); border-bottom: none;
+    border-radius: 8px 8px 0 0; color: var(--muted); background: #f1f4fa; margin-right: 4px;
+  }
+  .tabs > .panel { display: none; border: 1px solid var(--line); border-radius: 0 8px 8px 8px; padding: 16px 18px; }
+  .tabs > input:checked + label { background: var(--card); color: var(--ink); border-color: var(--line); }
+  #t-today:checked ~ #p-today,
+  #t-proposed:checked ~ #p-proposed { display: block; }
+
+  /* --- Collapsible detail --- */
+  details.detail { border: 1px solid var(--line); border-radius: 8px; padding: 4px 16px; margin: 0 0 12px; background: #fcfdff; }
+  details.detail > summary { cursor: pointer; font-weight: 600; padding: 10px 0; list-style: none; }
+  details.detail > summary::-webkit-details-marker { display: none; }
+  details.detail > summary::before { content: "▸"; color: var(--accent); margin-right: 8px; display: inline-block; transition: transform .15s; }
+  details.detail[open] > summary::before { transform: rotate(90deg); }
+
+  /* --- Flow / box-and-arrow diagram --- */
+  figure.diagram { margin: 6px 0 14px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfe; }
+  figure.diagram figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; text-align: center; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+  .flow .node {
+    border: 1.5px solid var(--accent); background: var(--accent-soft); color: var(--ink);
+    border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 600; text-align: center; min-width: 90px;
+  }
+  .flow .node.alt { border-color: var(--sponsor); background: var(--sponsor-soft); }
+  .flow .node.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .flow .node small { display: block; font-weight: 400; color: var(--muted); }
+  .flow .arrow { color: var(--muted); font-size: 20px; font-weight: 700; }
+  .flow .stack { display: flex; flex-direction: column; gap: 6px; }
+  figure.diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+
+  .divider { border: none; border-top: 2px dashed var(--line); margin: 44px 0 8px; }
+  .reality { border-left: 4px solid var(--warn); background: var(--warn-soft); border-radius: 0 8px 8px 0; }
+
+  footer.doc { margin-top: 36px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  @media print {
+    body { background: #fff; }
+    .wrap { max-width: none; padding: 0; }
+    nav.jump { display: none; }
+    details.detail[open], details.detail { border-color: #ccc; }
+    details.detail:not([open]) > summary::before { content: "▾"; }
+    details.detail > div { display: block !important; }
+    section.block, figure.diagram { break-inside: avoid; border-color: #ccc; }
+    .tabs > .panel { display: block !important; border-radius: 8px; margin-top: 6px; }
+    .tabs > label { display: none; }
+    header.doc { background: #25304a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <p class="eyebrow">Change Proposal</p>
+    <h1>{{TITLE}}</h1>
+    <div class="meta">
+      <span><b>Status:</b> <span class="status">Pending Review</span></span>
+      <span><b>Prepared:</b> {{DATE}}</span>
+      <span><b>For:</b> Project Sponsors &amp; System Architects</span>
+      <span><b>Source:</b> {{SOURCE_REF}}</span>
+    </div>
+  </header>
+
+  <nav class="jump">
+    <a class="sponsor" href="#sponsors">For Sponsors</a>
+    <a class="architect" href="#architects">For Architects</a>
+  </nav>
+
+  <!-- =============================================================
+       PART 1 — FOR PROJECT SPONSORS  (lead with this; keep it plain)
+       ============================================================= -->
+  <div class="audience-band sponsor" id="sponsors">
+    <span class="tag">Part 1</span>
+    <h2>For Project Sponsors</h2>
+    <span class="who">Plain-language overview &amp; the decision we're asking for</span>
+  </div>
+
+  <section class="block">
+    <h3>Executive summary</h3>
+    <!-- REPLACE: 2–4 sentences, no jargon. What we want to change and the headline payoff. -->
+    <p class="lead">{{EXECUTIVE_SUMMARY}}</p>
+  </section>
+
+  <section class="block">
+    <h3>What's changing</h3>
+    <!-- REPLACE the two panel bodies. Today = "What it does today"; Proposed = "Most promising
+         direction" in product language. Add a <figure class="diagram"> in either panel if a
+         before/after picture lands faster than prose. -->
+    <div class="tabs">
+      <input type="radio" name="change" id="t-today" checked>
+      <label for="t-today">Today</label>
+      <input type="radio" name="change" id="t-proposed">
+      <label for="t-proposed">Proposed</label>
+      <div class="panel" id="p-today">{{WHATS_CHANGING_TODAY}}</div>
+      <div class="panel" id="p-proposed">{{WHATS_CHANGING_PROPOSED}}</div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h3>Why it matters</h3>
+    <!-- REPLACE: 2–4 cards from the strongest, most business-legible benefits. -->
+    <div class="cards">
+      <div class="card"><h4>{{BENEFIT_1_TITLE}}</h4><p>{{BENEFIT_1_DESC}}</p></div>
+      <div class="card"><h4>{{BENEFIT_2_TITLE}}</h4><p>{{BENEFIT_2_DESC}}</p></div>
+      <div class="card"><h4>{{BENEFIT_3_TITLE}}</h4><p>{{BENEFIT_3_DESC}}</p></div>
+    </div>
+  </section>
+
+  <section class="block ask">
+    <h3>What we're asking you to decide</h3>
+    <!-- REPLACE: the decision plainly — approve to proceed, rough scale of the commitment,
+         and what happens next on approval. -->
+    <p>{{THE_ASK}}</p>
+  </section>
+
+  <section class="block">
+    <h3>Risks at a glance</h3>
+    <!-- REPLACE: 2–4 plain bullets distilled from downsides + reality check. -->
+    <ul class="clean risk-list">
+      {{SPONSOR_RISKS}}
+    </ul>
+  </section>
+
+  <hr class="divider">
+
+  <!-- =============================================================
+       PART 2 — FOR SYSTEM ARCHITECTS  (full technical detail)
+       ============================================================= -->
+  <div class="audience-band architect" id="architects">
+    <span class="tag">Part 2</span>
+    <h2>For System Architects</h2>
+    <span class="who">Design detail, trade-offs &amp; feasibility</span>
+  </div>
+
+  <section class="block">
+    <h3>The proposed design</h3>
+    <!-- REPLACE: from "Most promising direction" — core concepts, seams, data model, where
+         authority/state lives. Lead with an architecture diagram: edit the <figure> below
+         (compose .flow nodes/arrows, or paste hand-authored inline <svg>), then the prose. -->
+    <figure class="diagram">
+      <div class="flow">
+        <div class="node">{{DIAGRAM_NODE_A}}<small>{{DIAGRAM_NODE_A_SUB}}</small></div>
+        <span class="arrow">→</span>
+        <div class="node alt">{{DIAGRAM_NODE_B}}<small>{{DIAGRAM_NODE_B_SUB}}</small></div>
+        <span class="arrow">→</span>
+        <div class="node">{{DIAGRAM_NODE_C}}<small>{{DIAGRAM_NODE_C_SUB}}</small></div>
+      </div>
+      <figcaption>{{DIAGRAM_CAPTION}}</figcaption>
+    </figure>
+    {{PROPOSED_DESIGN}}
+  </section>
+
+  <section class="block">
+    <h3>Directions explored</h3>
+    <!-- REPLACE: from "Directions explored" — each candidate folded into a <details>, with the
+         flaw(s) that ruled it out. Keep the chosen direction's details open by default. -->
+    <details class="detail" open>
+      <summary>{{DIRECTION_1_TITLE}}</summary>
+      <div>{{DIRECTION_1_BODY}}</div>
+    </details>
+    <details class="detail">
+      <summary>{{DIRECTION_2_TITLE}}</summary>
+      <div>{{DIRECTION_2_BODY}}</div>
+    </details>
+    <!-- add more <details> per direction -->
+  </section>
+
+  <section class="block">
+    <h3>Benefits vs. lighter alternatives</h3>
+    <!-- REPLACE: the benefits/lighter-alternative trade-offs, trimmed to the rows that bear on
+         the decision. Drop this whole section if it doesn't sharpen the architect's call. -->
+    <div class="table-scroll">{{BENEFITS_TABLE}}</div>
+  </section>
+
+  <section class="block">
+    <h3>Downsides &amp; mitigations</h3>
+    <!-- REPLACE: the downsides + how they'd be mitigated, trimmed to the ones that matter.
+         Keep real cost visible — don't cut a downside just to strengthen the case. -->
+    <div class="table-scroll">{{DOWNSIDES_TABLE}}</div>
+  </section>
+
+  <section class="block reality">
+    <h3>Feasibility &amp; migration</h3>
+    <!-- REPLACE: from "Reality check" — migration cost, hardest unknowns, where resistance lives.
+         A phased-rollout flow diagram often helps here. -->
+    {{REALITY_CHECK}}
+  </section>
+
+  <section class="block">
+    <h3>Open questions &amp; next steps</h3>
+    <ul class="clean">
+      {{OPEN_QUESTIONS}}
+    </ul>
+  </section>
+
+  <footer class="doc">
+    Generated from {{SOURCE_REF}} via <code>/create-proposal</code>. This is a review artifact, not a commitment to build.
+  </footer>
+
+</div>
+</body>
+</html>
