@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Plus, Trash2, Settings, Save, Printer, FileText, Download, Upload, X, History, Layers, User, Package, Check, Paperclip, Menu, LogOut } from "lucide-react";
+import { Search, Plus, Trash2, Settings, Save, Printer, FileText, Download, Upload, X, History, Layers, User, Package, Check, Paperclip, Menu, LogOut, MapPin, Phone, Mail } from "lucide-react";
 import { supabase } from "./lib/supabase.js";
 
 const TYPES = ["tile", "hardwood", "vinyl", "laminate", "carpet"];
@@ -24,11 +24,11 @@ const fmtPhone = (v) => { const d = (v || "").replace(/\D/g, "").slice(0, 10); i
 const blobToDataURL = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
 const dataURLToBlob = (dataURL) => { const [meta, b64] = String(dataURL).split(","); const mime = (meta.match(/:(.*?);/) || [])[1] || "application/octet-stream"; const bin = atob(b64 || ""); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return new Blob([arr], { type: mime }); };
 
-const newProduct = () => ({ id: uid(), type: "tile", L: "", W: "", thickness: "0.375", sizeText: "", brandColor: "", priceSqft: "", qtyType: "sqft", qty: "", note: "", grout: { checked: false, product: "PermaColor Select", color: "", joint: 0.125 }, mortar: { checked: false, product: "ProLite", manual: "" } });
+const newProduct = () => ({ id: uid(), type: "tile", L: "", W: "", thickness: "0.375", sizeText: "", brandColor: "", priceSqft: "", qtyType: "sqft", qty: "", note: "", grout: { checked: false, product: "PermaColor Select", color: "", joint: 0.125, manual: "" }, mortar: { checked: false, product: "ProLite", manual: "" } });
 const newArea = () => ({ id: uid(), name: "New Area", note: "", products: [newProduct()] });
 const newCustomer = () => ({ id: uid(), name: "New Customer", address: "", phone: "", email: "", notes: "", createdAt: Date.now(), categories: [], versions: [], attachments: [] });
 
-const normP = (p) => ({ id: p.id || uid(), type: TYPES.includes(p.type) ? p.type : "tile", L: p.L ?? "", W: p.W ?? "", thickness: p.thickness ?? "0.375", sizeText: p.sizeText ?? (p.size || ""), brandColor: p.brandColor ?? [p.brand, p.color].filter(Boolean).join(" / "), priceSqft: p.priceSqft ?? "", qtyType: p.qtyType === "count" ? "count" : "sqft", qty: p.qty ?? "", note: p.note ?? "", grout: { checked: !!p.grout?.checked, product: GROUTS.includes(p.grout?.product) ? p.grout.product : "PermaColor Select", color: p.grout?.color || "", joint: p.grout?.joint ?? 0.125 }, mortar: { checked: !!p.mortar?.checked, product: MORTARS.includes(p.mortar?.product) ? p.mortar.product : "ProLite", manual: p.mortar?.manual ?? "" } });
+const normP = (p) => ({ id: p.id || uid(), type: TYPES.includes(p.type) ? p.type : "tile", L: p.L ?? "", W: p.W ?? "", thickness: p.thickness ?? "0.375", sizeText: p.sizeText ?? (p.size || ""), brandColor: p.brandColor ?? [p.brand, p.color].filter(Boolean).join(" / "), priceSqft: p.priceSqft ?? "", qtyType: p.qtyType === "count" ? "count" : "sqft", qty: p.qty ?? "", note: p.note ?? "", grout: { checked: !!p.grout?.checked, product: GROUTS.includes(p.grout?.product) ? p.grout.product : "PermaColor Select", color: p.grout?.color || "", joint: p.grout?.joint ?? 0.125, manual: p.grout?.manual ?? "" }, mortar: { checked: !!p.mortar?.checked, product: MORTARS.includes(p.mortar?.product) ? p.mortar.product : "ProLite", manual: p.mortar?.manual ?? "" } });
 const normA = (a) => ({ id: a.id || uid(), name: a.name || "Area", note: a.note || "", products: (a.products || [{}]).map(normP) });
 const normC = (c) => ({ ...c, categories: (c.categories || []).map(normA), versions: c.versions || [], attachments: c.attachments || [] });
 const mergeSettings = (s) => ({ wastePct: s?.wastePct ?? 10, mortars: MORTARS.reduce((o, k) => ({ ...o, [k]: { ...DEFAULTS.mortars[k], ...((s?.mortars?.[k]) || (k === "ProLite" ? s?.mortar : null) || {}) } }), {}), grouts: GROUTS.reduce((o, k) => ({ ...o, [k]: { ...DEFAULTS.grouts[k], ...(s?.grouts?.[k] || {}) } }), {}) });
@@ -36,7 +36,7 @@ const mergeSettings = (s) => ({ wastePct: s?.wastePct ?? 10, mortars: MORTARS.re
 function mortarExact(p, s) { if (p.type !== "tile" || p.qtyType !== "sqft") return null; const sqft = num(p.qty); if (!sqft) return 0; const longest = Math.max(num(p.L), num(p.W)); if (!longest) return null; const m = s.mortars[p.mortar.product]; if (!m) return null; const cov = longest < 8 ? m.tier1 : longest <= 15 ? m.tier2 : m.tier3; return sqft * (1 + num(s.wastePct) / 100) / (num(cov) || 1); }
 function getMortar(p, s) { if (p.type !== "tile" || !p.mortar.checked) return null; const m = s.mortars[p.mortar.product] || {}; if (p.mortar.manual !== "" && p.mortar.manual != null) { const v = num(p.mortar.manual); return { exact: v, order: v, unit: m.unit, price: num(m.price), product: p.mortar.product }; } const ex = mortarExact(p, s); if (ex == null) return null; return { exact: ex, order: Math.ceil(ex), unit: m.unit, price: num(m.price), product: p.mortar.product }; }
 function groutExact(p, s) { if (p.type !== "tile" || p.qtyType !== "sqft") return null; const sqft = num(p.qty), L = num(p.L), W = num(p.W), T = num(p.thickness), J = num(p.grout.joint); if (!sqft || !L || !W || !T || !J) return null; const vol = ((L + W) / (L * W)) * T * J; if (!vol) return null; const cov = num(s.grouts[p.grout.product]?.coverage) * (REF / vol); return sqft * (1 + num(s.wastePct) / 100) / (cov || 1); }
-function getGrout(p, s) { if (p.type !== "tile" || !p.grout.checked) return null; const ex = groutExact(p, s); if (ex == null) return null; const g = s.grouts[p.grout.product] || {}; return { exact: ex, order: Math.ceil(ex), unit: g.unit, price: num(g.price), product: p.grout.product, color: p.grout.color }; }
+function getGrout(p, s) { if (p.type !== "tile" || !p.grout.checked) return null; const g = s.grouts[p.grout.product] || {}; if (p.grout.manual !== "" && p.grout.manual != null) { const v = num(p.grout.manual); return { exact: v, order: v, unit: g.unit, price: num(g.price), product: p.grout.product, color: p.grout.color }; } const ex = groutExact(p, s); if (ex == null) return null; return { exact: ex, order: Math.ceil(ex), unit: g.unit, price: num(g.price), product: p.grout.product, color: p.grout.color }; }
 
 export default function App({ user, onSignOut }) {
   const [data, setData] = useState({ customers: [], settings: DEFAULTS });
@@ -294,42 +294,43 @@ export default function App({ user, onSignOut }) {
             </div>
           ) : (
             <div className="max-w-4xl mx-auto p-3 md:p-5">
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <input value={sel.name} onChange={(e) => updateCust(sel.id, { name: e.target.value })} className="text-xl md:text-2xl font-semibold tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 focus:outline-none pb-1 min-w-0 flex-1" />
-                  {saveOk && <span className="text-xs text-indigo-600 font-medium whitespace-nowrap">Saved ✓</span>}
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                  {isOwner(sel) ? (
-                    <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs" title="Who can see this customer">
-                      {["private", "public"].map((v) => <button key={v} onClick={() => setVisibility(sel.id, v)} className={`px-2.5 py-1.5 ${sel.visibility === v ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{v === "private" ? "Private" : "Public"}</button>)}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 md:p-5 mb-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <input value={sel.name} onChange={(e) => updateCust(sel.id, { name: e.target.value })} placeholder="Customer name" className="text-2xl md:text-3xl font-bold tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 focus:outline-none pb-0.5 min-w-0 flex-1" />
+                      {saveOk && <span className="text-xs text-indigo-600 font-medium whitespace-nowrap">Saved ✓</span>}
                     </div>
-                  ) : (
-                    <span className="text-xs font-medium text-slate-500 bg-slate-100 rounded-md px-2.5 py-1.5">Shared</span>
-                  )}
-                  {namingVersion ? (
-                    <div className="flex items-center gap-1">
-                      <input autoFocus value={versionName} onChange={(e) => setVersionName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmVersion(); if (e.key === "Escape") setNamingVersion(false); }} className="text-sm rounded-md border border-slate-200 px-2 py-1.5 w-32 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                      <button onClick={confirmVersion} className="flex items-center gap-1 text-sm rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5"><Check size={15} /></button>
-                      <button onClick={() => setNamingVersion(false)} className="rounded-md border border-slate-200 hover:bg-slate-50 px-2 py-1.5 text-slate-400"><X size={15} /></button>
+                    <div className="mt-2 flex flex-col sm:flex-row sm:flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
+                      <span className="flex items-center gap-1.5 min-w-0 sm:flex-1 sm:min-w-[12rem]"><MapPin size={14} className="shrink-0 text-slate-400" /><input value={sel.address} onChange={(e) => updateCust(sel.id, { address: e.target.value })} placeholder="Address" className="bg-transparent focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-indigo-500 min-w-0 flex-1" /></span>
+                      <span className="flex items-center gap-1.5"><Phone size={14} className="shrink-0 text-slate-400" /><input value={sel.phone} onChange={(e) => updateCust(sel.id, { phone: fmtPhone(e.target.value) })} placeholder="(216) 555-0192" className="bg-transparent focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-indigo-500 w-36" /></span>
+                      <span className="flex items-center gap-1.5"><Mail size={14} className="shrink-0 text-slate-400" /><input value={sel.email} onChange={(e) => updateCust(sel.id, { email: e.target.value })} placeholder="Email" className="bg-transparent focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-indigo-500 w-44" /></span>
                     </div>
-                  ) : (
-                    <button onClick={startVersionName} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><Save size={15} /> Version</button>
-                  )}
-                  <button onClick={() => setShowVersions(true)} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><History size={15} /> {(sel.versions?.length || 0)}</button>
-                  <button onClick={exportCSV} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><FileText size={15} /> CSV</button>
-                  <button onClick={() => window.print()} className="flex items-center gap-1.5 text-sm rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5"><Printer size={15} /> Print</button>
-                  {canDelete(sel) && <button onClick={() => setConfirm({ id: sel.id })} className="rounded-md border border-slate-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500 px-2 py-1.5 text-slate-400"><Trash2 size={15} /></button>}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+                    {isOwner(sel) ? (
+                      <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs" title="Who can see this customer">
+                        {["private", "public"].map((v) => <button key={v} onClick={() => setVisibility(sel.id, v)} className={`px-2.5 py-1.5 ${sel.visibility === v ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{v === "private" ? "Private" : "Public"}</button>)}
+                      </div>
+                    ) : (
+                      <span className="text-xs font-medium text-slate-500 bg-slate-100 rounded-md px-2.5 py-1.5">Shared</span>
+                    )}
+                    {namingVersion ? (
+                      <div className="flex items-center gap-1">
+                        <input autoFocus value={versionName} onChange={(e) => setVersionName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmVersion(); if (e.key === "Escape") setNamingVersion(false); }} className="text-sm rounded-md border border-slate-200 px-2 py-1.5 w-32 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button onClick={confirmVersion} className="flex items-center gap-1 text-sm rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5"><Check size={15} /></button>
+                        <button onClick={() => setNamingVersion(false)} className="rounded-md border border-slate-200 hover:bg-slate-50 px-2 py-1.5 text-slate-400"><X size={15} /></button>
+                      </div>
+                    ) : (
+                      <button onClick={startVersionName} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><Save size={15} /> Version</button>
+                    )}
+                    <button onClick={() => setShowVersions(true)} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><History size={15} /> {(sel.versions?.length || 0)}</button>
+                    <button onClick={exportCSV} className="flex items-center gap-1.5 text-sm rounded-md border border-slate-200 hover:bg-slate-50 px-2.5 py-1.5"><FileText size={15} /> CSV</button>
+                    <button onClick={() => window.print()} className="flex items-center gap-1.5 text-sm rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5"><Printer size={15} /> Print</button>
+                    {canDelete(sel) && <button onClick={() => setConfirm({ id: sel.id })} className="rounded-md border border-slate-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500 px-2 py-1.5 text-slate-400"><Trash2 size={15} /></button>}
+                  </div>
                 </div>
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  <div className="col-span-2"><label className={lbl}>Address</label><input value={sel.address} onChange={(e) => updateCust(sel.id, { address: e.target.value })} className={inp} /></div>
-                  <div><label className={lbl}>Phone</label><input value={sel.phone} onChange={(e) => updateCust(sel.id, { phone: fmtPhone(e.target.value) })} className={inp} placeholder="(216) 555-0192" /></div>
-                  <div><label className={lbl}>Email</label><input value={sel.email} onChange={(e) => updateCust(sel.id, { email: e.target.value })} className={inp} /></div>
-                </div>
-                <div className="mt-2"><label className={lbl}>Project notes</label><textarea value={sel.notes} onChange={(e) => updateCust(sel.id, { notes: e.target.value })} rows={2} className={inp} /></div>
+                <div className="mt-3 pt-3 border-t border-slate-100"><label className={lbl}>Project notes</label><textarea value={sel.notes} onChange={(e) => updateCust(sel.id, { notes: e.target.value })} rows={2} className={inp} /></div>
                 <div className="mt-2 flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-medium text-slate-500 flex items-center gap-1"><Paperclip size={13} /> Attachments <span className="text-slate-300">(not printed)</span></span>
                   {(sel.attachments || []).map((m) => (
@@ -361,16 +362,17 @@ export default function App({ user, onSignOut }) {
                     <div className="space-y-2 mt-2">
                       {a.products.map((p) => {
                         const G = getGrout(p, settings), M = getMortar(p, settings);
+                        const gEx = groutExact(p, settings), mEx = mortarExact(p, settings);
                         const sf = p.qtyType === "sqft" ? num(p.qty) : 0; const line = sf * num(p.priceSqft);
                         const thickKnown = THICK.some((t) => t.v === String(p.thickness));
                         return (
                           <div key={p.id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-2.5">
                             <div className="grid grid-cols-12 gap-1.5 items-center">
                               {p.type === "tile" ? (<>
-                                <input type="number" value={p.L} onChange={(e) => updProduct(a.id, p.id, { L: e.target.value })} className={inp + " col-span-1"} placeholder="L" title="Length (in)" />
-                                <input type="number" value={p.W} onChange={(e) => updProduct(a.id, p.id, { W: e.target.value })} className={inp + " col-span-1"} placeholder="W" title="Width (in)" />
+                                <input type="number" value={p.L} onChange={(e) => updProduct(a.id, p.id, { L: e.target.value })} className={inp + " col-span-2"} placeholder="Length" title="Length (in)" />
+                                <input type="number" value={p.W} onChange={(e) => updProduct(a.id, p.id, { W: e.target.value })} className={inp + " col-span-2"} placeholder="Width" title="Width (in)" />
                                 <select value={p.thickness} onChange={(e) => updProduct(a.id, p.id, { thickness: e.target.value })} className={inp + " col-span-2"} title="Thickness">{!thickKnown && <option value={p.thickness}>{p.thickness}"</option>}{THICK.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select>
-                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className={inp + " col-span-6"} placeholder="Brand / color" />
+                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className={inp + " col-span-4"} placeholder="Brand / color" />
                               </>) : (<>
                                 <input value={p.sizeText} onChange={(e) => updProduct(a.id, p.id, { sizeText: e.target.value })} className={inp + " col-span-3"} placeholder="Size" />
                                 <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className={inp + " col-span-7"} placeholder="Brand / color" />
@@ -386,45 +388,59 @@ export default function App({ user, onSignOut }) {
                               {a.products.length > 1 && <button onClick={() => delProduct(a.id, p.id)} className="text-slate-300 hover:text-red-500"><X size={14} /></button>}
                             </div>
 
-                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                              <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className={inp + " w-20"} placeholder="0" />
-                              <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs">{["sqft", "count"].map((t) => <button key={t} onClick={() => updProduct(a.id, p.id, { qtyType: t })} className={`px-2.5 py-1.5 ${p.qtyType === t ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{t === "sqft" ? "Sq Ft" : "Count"}</button>)}</div>
-                              {p.qtyType === "sqft" && <span className="text-xs text-slate-500">{sf} sq ft{num(p.priceSqft) > 0 && <span className="text-slate-700 font-medium"> · {money(line)}</span>}</span>}
-                              <input value={p.note} onChange={(e) => updProduct(a.id, p.id, { note: e.target.value })} placeholder="note…" className="flex-1 text-sm text-slate-500 bg-transparent focus:outline-none placeholder:text-slate-300 min-w-[80px]" />
-                            </div>
-
-                            {p.type === "tile" && (
-                              <div className="border-t border-slate-200 pt-2 mt-2 space-y-1.5">
+                            {p.type === "tile" ? (
+                              <div className="border-t border-slate-200 pt-2 mt-2 grid grid-cols-1 md:grid-cols-[0.8fr_1.7fr_1.1fr] gap-2 items-start">
+                                {/* Quantity */}
+                                <div className="rounded-md border border-slate-100 bg-white px-2.5 py-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium flex-1">Sq Ft</span>
+                                    {p.qtyType === "sqft" && num(p.priceSqft) > 0 && <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">{money(line)}</span>}
+                                  </div>
+                                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                    <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className={inp + " !w-14"} placeholder="0" />
+                                    <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs shrink-0">{["sqft", "count"].map((t) => <button key={t} onClick={() => updProduct(a.id, p.id, { qtyType: t })} className={`px-2.5 py-1.5 ${p.qtyType === t ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{t === "sqft" ? "SF" : "EA"}</button>)}</div>
+                                    {p.qtyType === "sqft" && num(p.priceSqft) === 0 && <span className="text-xs text-slate-500 whitespace-nowrap">{sf} sf</span>}
+                                  </div>
+                                </div>
+                                {/* Grout */}
                                 <div className={`rounded-md border px-2.5 py-1.5 ${p.grout.checked ? "border-indigo-200 bg-indigo-50/40" : "border-slate-100 bg-white"}`}>
                                   <div className="flex items-center gap-2">
                                     <button onClick={() => updProduct(a.id, p.id, { grout: { ...p.grout, checked: !p.grout.checked } })} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.grout.checked ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.grout.checked && <Check size={12} />}</button>
                                     <span className="text-sm font-medium flex-1">Grout</span>
-                                    {p.grout.checked && G && <span className="text-sm text-indigo-700"><span className="text-slate-400">{G.exact.toFixed(2)} →</span> <span className="font-semibold">{G.order} {G.unit}</span></span>}
+                                    {p.grout.checked && <span className="flex items-center gap-1 text-sm text-indigo-700 shrink-0">{gEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{gEx.toFixed(2)} →</span>}<input type="number" value={G ? String(G.order) : ""} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 bg-white" /><span className="font-semibold">{G ? G.unit : settings.grouts[p.grout.product]?.unit}</span></span>}
                                   </div>
                                   {p.grout.checked && (
-                                    <div className="mt-1.5 grid grid-cols-12 gap-1.5 items-center">
-                                      <select value={p.grout.product} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, product: e.target.value } })} className={inp + " col-span-6 md:col-span-4"}>{GROUTS.map((g) => <option key={g}>{g}</option>)}</select>
-                                      <select value={p.grout.color} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, color: e.target.value } })} className={inp + " col-span-6 md:col-span-4"}><option value="">Color…</option>{COLORS.map((c) => <option key={c}>{c}</option>)}</select>
-                                      <div className="col-span-12 md:col-span-4 flex rounded-md border border-slate-200 overflow-hidden text-xs">{JOINTS.map((j) => <button key={j.v} onClick={() => updProduct(a.id, p.id, { grout: { ...p.grout, joint: j.v } })} className={`flex-1 py-1.5 ${num(p.grout.joint) === j.v ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{j.label}</button>)}</div>
-                                      {!G && <div className="col-span-12 text-xs text-amber-500">Enter Sq Ft + tile L/W/thickness to calculate.</div>}
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
+                                      <select value={p.grout.product} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, product: e.target.value } })} className={inp + " flex-1 min-w-[7rem]"}>{GROUTS.map((g) => <option key={g}>{g}</option>)}</select>
+                                      <select value={p.grout.color} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, color: e.target.value } })} className={inp + " flex-1 min-w-[6rem]"}><option value="">Color…</option>{COLORS.map((c) => <option key={c}>{c}</option>)}</select>
+                                      <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs shrink-0">{JOINTS.map((j) => <button key={j.v} onClick={() => updProduct(a.id, p.id, { grout: { ...p.grout, joint: j.v } })} className={`px-2 py-1.5 ${num(p.grout.joint) === j.v ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{j.label}</button>)}</div>
+                                      {!G && <div className="w-full text-xs text-amber-500">Enter Sq Ft + tile L/W/thickness to calculate, or type a total above.</div>}
                                     </div>
                                   )}
                                 </div>
+                                {/* Mortar */}
                                 <div className={`rounded-md border px-2.5 py-1.5 ${p.mortar.checked ? "border-indigo-200 bg-indigo-50/40" : "border-slate-100 bg-white"}`}>
                                   <div className="flex items-center gap-2">
                                     <button onClick={() => updProduct(a.id, p.id, { mortar: { ...p.mortar, checked: !p.mortar.checked } })} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.mortar.checked ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.mortar.checked && <Check size={12} />}</button>
                                     <span className="text-sm font-medium flex-1">Mortar</span>
-                                    {p.mortar.checked && M && p.mortar.manual === "" && <span className="text-sm text-indigo-700"><span className="text-slate-400">{M.exact.toFixed(2)} →</span> <span className="font-semibold">{M.order} {M.unit}</span></span>}
+                                    {p.mortar.checked && <span className="flex items-center gap-1 text-sm text-indigo-700 shrink-0">{mEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{mEx.toFixed(2)} →</span>}<input type="number" value={M ? String(M.order) : ""} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 bg-white" /><span className="font-semibold">{M ? M.unit : settings.mortars[p.mortar.product]?.unit}</span></span>}
                                   </div>
                                   {p.mortar.checked && (
-                                    <div className="mt-1.5 grid grid-cols-12 gap-1.5 items-center">
-                                      <select value={p.mortar.product} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, product: e.target.value } })} className={inp + " col-span-6"}>{MORTARS.map((g) => <option key={g}>{g}</option>)}</select>
-                                      <div className="col-span-6 flex items-center gap-1 justify-end"><span className="text-xs text-slate-400">override</span><input value={p.mortar.manual} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, manual: e.target.value } })} placeholder="auto" className="w-14 text-right rounded border border-slate-200 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" /><span className="text-xs text-slate-400 w-12">{settings.mortars[p.mortar.product]?.unit}</span></div>
+                                    <div className="mt-1.5">
+                                      <select value={p.mortar.product} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, product: e.target.value } })} className={inp}>{MORTARS.map((g) => <option key={g}>{g}</option>)}</select>
                                     </div>
                                   )}
                                 </div>
                               </div>
+                            ) : (
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className={inp + " !w-16 shrink-0"} placeholder="0" />
+                                <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs shrink-0">{["sqft", "count"].map((t) => <button key={t} onClick={() => updProduct(a.id, p.id, { qtyType: t })} className={`px-2.5 py-1.5 ${p.qtyType === t ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>{t === "sqft" ? "SF" : "EA"}</button>)}</div>
+                                {p.qtyType === "sqft" && <span className="text-xs text-slate-500 whitespace-nowrap">{sf} sq ft{num(p.priceSqft) > 0 && <span className="text-slate-700 font-medium"> · {money(line)}</span>}</span>}
+                              </div>
                             )}
+
+                            <input value={p.note} onChange={(e) => updProduct(a.id, p.id, { note: e.target.value })} placeholder="note…" className="w-full mt-2 text-sm text-slate-500 bg-transparent focus:outline-none placeholder:text-slate-300" />
                           </div>
                         );
                       })}

@@ -65,7 +65,7 @@ Area     { id, name, note, products: Product[] }
 Product  { id, type:"tile|hardwood|vinyl|laminate|carpet",
            L, W, thickness, sizeText, brandColor, priceSqft,
            qtyType:"sqft|count", qty, note,
-           grout:{checked,product,color,joint}, mortar:{checked,product,manual} }
+           grout:{checked,product,color,joint,manual}, mortar:{checked,product,manual} }
 Version  { id, label, savedAt, snapshot: Area[] }
 Att      { id, name, type, size }   // file bytes live in Storage, not here
 Settings { wastePct, mortars{...}, grouts{...} }
