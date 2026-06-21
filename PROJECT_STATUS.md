@@ -8,7 +8,7 @@ session, a local editor, or by a teammate). For architecture details see
 
 | Thing | Location |
 |---|---|
-| Source code | GitHub: `redscissors/Label-Designer` (this repo) |
+| Source code | GitHub: `redscissors/Flooring-Tracker` (renamed from `Label-Designer`) |
 | Main branch (deployed) | `main` |
 | Dev branch | `claude/floortrack-app-dev-u3bucp` |
 | Live site | https://flooringkeeper.netlify.app |
@@ -17,6 +17,14 @@ session, a local editor, or by a teammate). For architecture details see
 
 > The source of truth is GitHub. Supabase and Netlify state live in those
 > accounts, **not** in the repo — keep those account logins.
+
+## Heads-up: repo was renamed
+
+The repo was renamed `Label-Designer` → `Flooring-Tracker`. GitHub keeps a
+redirect so old links/clones still resolve, but **a Claude Code session that was
+started against the old name can no longer `git push`** (only the GitHub API
+redirect keeps working). For new work, start a fresh session pointed at
+`redscissors/Flooring-Tracker` and it will push normally.
 
 ## How deploy works
 
@@ -32,6 +40,9 @@ no extra configuration.
 - Cloud sync via Supabase (one `app_data` row per user).
 - Attachments in Supabase Storage (private, per-user).
 - Email/password login, **sign-in only** (accounts created by admin).
+- Invite / password-reset flow: a "Set your password" screen appears when a user
+  arrives via an invite or reset link; the sign-in screen has a
+  "Forgot password / first time" option.
 - Live on Netlify with auto-deploy from `main`.
 
 ## Pending / to verify
@@ -40,7 +51,8 @@ no extra configuration.
 - [ ] Create team user accounts: Supabase → Authentication → Users → Add user
       (tick *Auto Confirm User*); turn OFF "Allow new users to sign up".
 - [ ] Set Supabase Auth **Site URL** to `https://flooringkeeper.netlify.app`
-      and add `https://flooringkeeper.netlify.app/**` to Redirect URLs.
+      and add `https://flooringkeeper.netlify.app/**` to Redirect URLs
+      (so invite/reset links open the live site, not localhost).
 
 ## Not implemented (future)
 
@@ -51,8 +63,8 @@ no extra configuration.
 ## Run it locally
 
 ```bash
-git clone https://github.com/redscissors/Label-Designer.git
-cd Label-Designer
+git clone https://github.com/redscissors/Flooring-Tracker.git
+cd Flooring-Tracker
 npm install
 # create .env (values are also in netlify.toml):
 #   VITE_SUPABASE_URL=https://mzftplcyfotlzolqeapl.supabase.co
