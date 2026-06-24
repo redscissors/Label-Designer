@@ -314,7 +314,7 @@ export default function App({ user, onSignOut }) {
   );
 
   return (
-    <div className="h-screen bg-slate-50 text-slate-800 flex flex-col" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div className="h-screen bg-slate-50 text-slate-800 flex flex-col" style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}>
       <div className={`print:hidden flex ${isWide ? "flex-row" : "flex-col"} flex-1 overflow-hidden relative`}>
         {/* Mobile top bar */}
         {!isWide && (
@@ -331,7 +331,7 @@ export default function App({ user, onSignOut }) {
         <aside className={isWide ? "ft-rail border-r border-slate-200 flex flex-col w-64 shrink-0" : `ft-rail border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center"><Layers size={18} className="text-white" /></div>
-            <div className="flex-1"><div className="font-semibold tracking-tight">FloorTrack</div><div className="text-xs text-slate-400 -mt-0.5">Selection manager</div></div>
+            <div className="flex-1"><div className="ft-display font-semibold uppercase tracking-[0.18em] text-[15px]">FloorTrack</div><div className="text-xs text-slate-400 -mt-0.5">Selection manager</div></div>
             {!isWide && <button onClick={() => setSidebarOpen(false)} className="text-slate-400"><X size={18} /></button>}
           </div>
           <div className="p-2.5 space-y-2">
