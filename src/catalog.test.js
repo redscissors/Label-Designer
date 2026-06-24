@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULTS, GROUTS, MORTARS, mergeSettings, seedCatalog, resolveCatalog, normalizeSettings } from "./catalog.js";
+import { DEFAULTS, GROUTS, MORTARS, mergeSettings, seedCatalog, resolveCatalog, normalizeSettings, groutExact, mortarExact, getGrout, getMortar } from "./catalog.js";
+
+// A fully-checked tile selection used by the math tests.
+const tile = (over = {}) => ({
+  type: "tile", qtyType: "sqft", qty: "200", L: "12", W: "12", thickness: "0.375",
+  grout: { checked: true, product: "PermaColor Select", color: "", joint: 0.125, manual: "" },
+  mortar: { checked: true, product: "ProLite", manual: "" },
+  ...over,
+});
 
 // --- Slice 01: shared settings store -----------------------------------------
 // The migration/seed path is just mergeSettings producing the canonical record
@@ -102,4 +110,40 @@ test("normalizeSettings attaches derived maps matching the flat seed numbers", (
   const flat = mergeSettings(undefined);
   assert.equal(s.grouts["PermaColor Select"].coverage, flat.grouts["PermaColor Select"].coverage);
   assert.equal(s.mortars["ProLite"].tier1, flat.mortars["ProLite"].tier1);
+});
+
+// --- Slice 03: math sources numbers from the catalog by name -----------------
+
+test("groutExact/mortarExact from the catalog match the flat-settings result", () => {
+  const flat = mergeSettings(undefined);
+  const cat = normalizeSettings(undefined); // { wastePct, catalog, grouts, mortars }
+  const p = tile();
+  assert.equal(groutExact(p, cat), groutExact(p, flat));
+  assert.equal(mortarExact(p, cat), mortarExact(p, flat));
+  // And the same after tuning a number through the catalog's derived map.
+  const tuned = normalizeSettings({ grouts: { "PermaColor Select": { coverage: 95, unit: "bags", price: 0 } } });
+  const tunedFlat = mergeSettings({ grouts: { "PermaColor Select": { coverage: 95, unit: "bags", price: 0 } } });
+  assert.equal(groutExact(p, tuned), groutExact(p, tunedFlat));
+});
+
+test("resolve-by-name finds a product regardless of enabled state (hidden product still calculates)", () => {
+  const s = normalizeSettings(undefined);
+  // Disable every PermaColor Select entry; resolveCatalog must still expose it.
+  s.catalog.companies.forEach((c) => c.grouts.forEach((g) => { if (g.name === "PermaColor Select") g.enabled = false; }));
+  const { grouts } = resolveCatalog(s.catalog);
+  assert.ok(grouts["PermaColor Select"], "disabled product still resolves by name");
+  const s2 = { ...s, ...resolveCatalog(s.catalog) };
+  assert.ok(groutExact(tile(), s2) > 0);
+});
+
+test("a selection naming a product with no catalog entry degrades gracefully (no crash)", () => {
+  const s = normalizeSettings(undefined);
+  const p = tile({ grout: { checked: true, product: "Ghost Grout", color: "", joint: 0.125, manual: "" }, mortar: { checked: true, product: "Ghost Mortar", manual: "" } });
+  // groutExact divides by a 0-coverage fallback → finite number, no throw.
+  assert.doesNotThrow(() => groutExact(p, s));
+  // getMortar returns null when the product isn't found (same path as a missing rate).
+  assert.equal(getMortar(p, s), null);
+  // A manual override still produces an order even for an unknown product.
+  const manual = tile({ grout: { checked: true, product: "Ghost Grout", color: "", joint: 0.125, manual: "7" } });
+  assert.equal(getGrout(manual, s).order, 7);
 });
