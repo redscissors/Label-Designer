@@ -63,7 +63,7 @@ const allMortarNames = (catalog) => catalog.companies.flatMap((c) => c.mortars.m
 
 test("seedCatalog builds the expected companies from the built-ins", () => {
   const cat = seedCatalog(mergeSettings(undefined));
-  assert.deepEqual(cat.companies.map((c) => c.name), ["Laticrete", "Custom Building Products"]);
+  assert.deepEqual(cat.companies.map((c) => c.name), ["Laticrete", "Custom Building Products", "Tec", "Schluter"]);
   assert.deepEqual(allGroutNames(cat).sort(), [...GROUTS].sort());
   assert.deepEqual(allMortarNames(cat).sort(), [...MORTARS].sort());
 });

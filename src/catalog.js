@@ -4,13 +4,17 @@
 // Kept import-free so it can be unit-tested with `node --test` (see
 // catalog.test.js). App.jsx imports everything it needs from here.
 
-export const GROUTS = ["PermaColor Select", "SpectraLOCK 1", "SpectraLOCK PRO"];
-export const MORTARS = ["ProLite", "AcrylPro"];
+export const GROUTS = ["PermaColor Select", "SpectraLOCK 1", "SpectraLOCK PRO", "CEG-Lite", "Tec Power Grout"];
+export const MORTARS = ["ProLite", "AcrylPro", "Schluter All Set"];
 
+// CEG-Lite coverage (187 sq ft / Part A+B unit) is the manufacturer's published
+// number at this app's 12×12×3/8" tile, 1/8" joint baseline. Tec Power Grout and
+// Schluter All Set numbers are first-pass estimates the team is expected to
+// calibrate against their real-world yields in Settings.
 export const DEFAULTS = {
   wastePct: 10,
-  mortars: { "ProLite": { tier1: 90, tier2: 63, tier3: 45, unit: "bags", price: 0 }, "AcrylPro": { tier1: 40, tier2: 15, tier3: 10, unit: "gallons", price: 0 } },
-  grouts: { "PermaColor Select": { coverage: 110, unit: "bags", price: 0 }, "SpectraLOCK 1": { coverage: 85, unit: "units", price: 0 }, "SpectraLOCK PRO": { coverage: 90, unit: "units", price: 0 } },
+  mortars: { "ProLite": { tier1: 90, tier2: 63, tier3: 45, unit: "bags", price: 0 }, "AcrylPro": { tier1: 40, tier2: 15, tier3: 10, unit: "gallons", price: 0 }, "Schluter All Set": { tier1: 95, tier2: 70, tier3: 45, unit: "bags", price: 0 } },
+  grouts: { "PermaColor Select": { coverage: 110, unit: "bags", price: 0 }, "SpectraLOCK 1": { coverage: 85, unit: "units", price: 0 }, "SpectraLOCK PRO": { coverage: 90, unit: "units", price: 0 }, "CEG-Lite": { coverage: 187, unit: "units", price: 0 }, "Tec Power Grout": { coverage: 45, unit: "bags", price: 0 } },
 };
 
 // Grout scales volumetrically from a 12×12×3/8" tile with a 1/8" joint.
@@ -75,7 +79,9 @@ const cid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(3
 // the starting grouping.
 const SEED_COMPANIES = [
   { name: "Laticrete", grouts: ["PermaColor Select", "SpectraLOCK 1", "SpectraLOCK PRO"], mortars: [] },
-  { name: "Custom Building Products", grouts: [], mortars: ["ProLite", "AcrylPro"] },
+  { name: "Custom Building Products", grouts: ["CEG-Lite"], mortars: ["ProLite", "AcrylPro"] },
+  { name: "Tec", grouts: ["Tec Power Grout"], mortars: [] },
+  { name: "Schluter", grouts: [], mortars: ["Schluter All Set"] },
 ];
 
 const groutFields = (g) => ({ coverage: g?.coverage ?? 0, unit: g?.unit ?? "units", price: g?.price ?? 0 });
