@@ -40,12 +40,12 @@ export default function Auth() {
   const inp = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent";
 
   return (
-    <div className="h-screen flex items-center justify-center bg-slate-50 p-6" style={{ fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div className="h-screen flex items-center justify-center bg-slate-50 p-6" style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}>
       <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-5">
           <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center"><Layers size={20} className="text-white" /></div>
           <div>
-            <div className="font-semibold tracking-tight">FloorTrack</div>
+            <div className="ft-display font-semibold uppercase tracking-[0.18em]">FloorTrack</div>
             <div className="text-xs text-slate-400 -mt-0.5">{mode === "reset" ? "Set a new password" : "Sign in to continue"}</div>
           </div>
         </div>
