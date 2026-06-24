@@ -33,8 +33,13 @@ references its grout/mortar **by name** — the material math looks up
 4. **Seed from today's built-ins.** The catalog starts pre-filled with the
    current built-in products under the *same names*, so every existing job keeps
    resolving; the team assigns them to companies and extends from there.
-5. **Colors stay out.** The grout color list remains the single shared list it is
-   today, unmanaged by this feature.
+5. **Colors stay out of the persisted catalog.** Grout colors remain
+   **code-defined**, not part of the saved Company → Product structure and not
+   team-editable through Settings. *(Amended 2026-06-23: the former single global
+   color list is now a per-grout-name map — each brand offers its own palette,
+   with a default list for grouts that have no specific palette. This is still a
+   code constant, so the "out of the persisted catalog" decision holds; only the
+   shape changed from one shared list to one keyed by grout name.)*
 
 ## Why
 
