@@ -228,10 +228,10 @@ export default function App({ user, onSignOut }) {
   };
 
   const addCustomer = () => {
-    const c = { ...newCustomer(), ownerId: user.id, visibility: "private", archived: false, _full: true };
+    const c = { ...newCustomer(), ownerId: user.id, visibility: "public", archived: false, _full: true };
     setData((prev) => ({ ...prev, customers: [c, ...prev.customers] }));
     setSelId(c.id); setSidebarOpen(false); setFocusName(true);
-    (async () => { try { const { error } = await supabase.from("customers").insert({ id: c.id, owner_id: user.id, visibility: "private", data: custData(c), created_at: new Date(c.createdAt).toISOString() }); if (error) throw error; flashSaved(); } catch (e) { ping("Save failed — export a backup"); } })();
+    (async () => { try { const { error } = await supabase.from("customers").insert({ id: c.id, owner_id: user.id, visibility: "public", data: custData(c), created_at: new Date(c.createdAt).toISOString() }); if (error) throw error; flashSaved(); } catch (e) { ping("Save failed — export a backup"); } })();
   };
   const pickCustomer = (id) => { setSelId(id); setSidebarOpen(false); loadDetail(id); };
   const delCustomer = async (id) => {
