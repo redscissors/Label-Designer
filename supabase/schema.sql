@@ -61,7 +61,7 @@ create trigger app_data_updated_at
 create table if not exists public.customers (
   id         text primary key,
   owner_id   uuid not null references auth.users (id) on delete cascade,
-  visibility text not null default 'private' check (visibility in ('private', 'public')),
+  visibility text not null default 'public' check (visibility in ('private', 'public')),
   archived   boolean not null default false,
   data       jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
