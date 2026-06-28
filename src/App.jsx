@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { Search, Plus, Trash2, Settings, Save, Printer, FileText, Download, Upload, X, History, Layers, User, Package, Check, Paperclip, Menu, LogOut, MapPin, Phone, Mail, Archive, ArchiveRestore, ChevronRight, ChevronDown } from "lucide-react";
+import { Search, Plus, Trash2, Settings, Save, Printer, FileText, Download, Upload, X, History, Layers, User, Package, Check, Paperclip, Menu, LogOut, Archive, ArchiveRestore, ChevronRight, ChevronDown } from "lucide-react";
 import { supabase } from "./lib/supabase.js";
 import { num, normalizeSettings, withDerived, serializeSettings, groutExact, mortarExact, getGrout, getMortar, offeredGrouts, offeredMortars, isDuplicateName, addCompany, addProduct } from "./catalog.js";
 
@@ -22,7 +22,6 @@ const ATT_BUCKET = "attachments";
 const SHARED_SETTINGS_ID = "singleton";
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 const money = (n) => `$${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtPhone = (v) => { const d = (v || "").replace(/\D/g, "").slice(0, 10); if (d.length < 4) return d; if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`; return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`; };
 const blobToDataURL = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
 const dataURLToBlob = (dataURL) => { const [meta, b64] = String(dataURL).split(","); const mime = (meta.match(/:(.*?);/) || [])[1] || "application/octet-stream"; const bin = atob(b64 || ""); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return new Blob([arr], { type: mime }); };
 
@@ -56,9 +55,6 @@ export default function App({ user, onSignOut }) {
   const attRef = useRef(null);
   const areaRefs = useRef({});
   const nameRef = useRef(null);
-  const addressRef = useRef(null);
-  const phoneRef = useRef(null);
-  const emailRef = useRef(null);
   const addAreaRef = useRef(null);
   const saveOkTimer = useRef(null);
 
@@ -410,13 +406,8 @@ export default function App({ user, onSignOut }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <input ref={nameRef} onKeyDown={tabTo(addressRef)} value={sel.name} onChange={(e) => updateCust(sel.id, { name: e.target.value })} placeholder="Customer name" className={"text-2xl md:text-3xl font-bold tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 focus:outline-none pb-0.5 min-w-0 flex-1 rounded-sm transition" + (focusName ? " ring-2 ring-indigo-500 ring-offset-2 bg-indigo-50/50" : "")} />
+                      <input ref={nameRef} onKeyDown={tabTo(addAreaRef)} value={sel.name} onChange={(e) => updateCust(sel.id, { name: e.target.value })} placeholder="Customer name" className={"text-2xl md:text-3xl font-bold tracking-tight bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 focus:outline-none pb-0.5 min-w-0 flex-1 rounded-sm transition" + (focusName ? " ring-2 ring-indigo-500 ring-offset-2 bg-indigo-50/50" : "")} />
                       {saveOk && <span className="text-xs text-indigo-600 font-medium whitespace-nowrap">Saved ✓</span>}
-                    </div>
-                    <div className="mt-2 flex flex-col sm:flex-row sm:flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
-                      <span className="flex items-center gap-1.5 min-w-0 sm:flex-1 sm:min-w-[12rem]"><MapPin size={14} className="shrink-0 text-slate-400" /><input ref={addressRef} onKeyDown={tabTo(phoneRef)} value={sel.address} onChange={(e) => updateCust(sel.id, { address: e.target.value })} placeholder="Address" className="bg-transparent focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-indigo-500 min-w-0 flex-1" /></span>
-                      <span className="flex items-center gap-1.5"><Phone size={14} className="shrink-0 text-slate-400" /><input ref={phoneRef} onKeyDown={tabTo(emailRef)} value={sel.phone} onChange={(e) => updateCust(sel.id, { phone: fmtPhone(e.target.value) })} placeholder="(216) 555-0192" className="bg-transparent focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-indigo-500 w-36" /></span>
-                      <span className="flex items-center gap-1.5"><Mail size={14} className="shrink-0 text-slate-400" /><input ref={emailRef} onKeyDown={tabTo(addAreaRef)} value={sel.email} onChange={(e) => updateCust(sel.id, { email: e.target.value })} placeholder="Email" className="bg-transparent focus:outline-none border-b border-transparent hover:border-slate-200 focus:border-indigo-500 w-44" /></span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
@@ -609,7 +600,7 @@ export default function App({ user, onSignOut }) {
         {sel && sel._full && (
           <div>
             <div className="flex justify-between items-end border-b-2 border-black pb-3 mb-4">
-              <div><div className="text-2xl font-bold">{sel.name}</div><div className="text-sm">{sel.address}</div><div className="text-sm">{[sel.phone, sel.email].filter(Boolean).join(" · ")}</div></div>
+              <div><div className="text-2xl font-bold">{sel.name}</div></div>
               <div className="text-right text-sm"><div className="font-semibold">Flooring &amp; Tile Selections</div><div>{new Date().toLocaleDateString()}</div></div>
             </div>
             {sel.notes && <div className="text-sm mb-4 italic">{sel.notes}</div>}
@@ -623,9 +614,9 @@ export default function App({ user, onSignOut }) {
                   const sf = p.qtyType === "sqft" ? num(p.qty) : 0; const line = sf * num(p.priceSqft);
                   return (
                     <div key={p.id} className="mt-2 text-sm">
-                      <div><b>{TLBL[p.type]}</b>{size ? ` · ${size}` : ""}{p.brandColor ? ` · ${p.brandColor}` : ""}{p.qty ? ` · ${p.qty} ${p.qtyType === "sqft" ? "sq ft" : "units"}` : ""}{num(p.priceSqft) > 0 ? ` @ ${money(num(p.priceSqft))}/sf = ${money(line)}` : ""}</div>
-                      {G && <div className="ml-3">Grout: {G.product}{G.color ? ` — ${G.color}` : ""}{j ? `, ${j} joint` : ""} → {G.order} {G.unit} ({G.exact.toFixed(2)}){G.price > 0 ? ` = ${money(G.order * G.price)}` : ""}</div>}
-                      {M && <div className="ml-3">Mortar: {M.product} → {M.order} {M.unit} ({M.exact.toFixed(2)}){M.price > 0 ? ` = ${money(M.order * M.price)}` : ""}</div>}
+                      <div><b>{TLBL[p.type]}</b>{size ? ` · ${size}` : ""}{p.brandColor ? ` · ${p.brandColor}` : ""}{p.qty ? ` · ${p.qty} ${p.qtyType === "sqft" ? "sq ft" : "units"}` : ""}{num(p.priceSqft) > 0 ? ` @ ${money(num(p.priceSqft))}/${p.qtyType === "count" ? "ea" : "sf"}${line > 0 ? ` = ${money(line)}` : ""}` : ""}</div>
+                      {G && (G.order > 0 ? <div className="ml-3">Grout: {G.product}{G.color ? ` — ${G.color}` : ""}{j ? `, ${j} joint` : ""} → {G.order} {G.unit} ({G.exact.toFixed(2)}){G.price > 0 ? ` = ${money(G.order * G.price)}` : ""}</div> : <div className="ml-3">Grout: {G.product}{G.color ? ` — ${G.color}` : ""}{j ? `, ${j} joint` : ""}</div>)}
+                      {M && (M.order > 0 ? <div className="ml-3">Mortar: {M.product} → {M.order} {M.unit} ({M.exact.toFixed(2)}){M.price > 0 ? ` = ${money(M.order * M.price)}` : ""}</div> : <div className="ml-3">Mortar: {M.product}</div>)}
                       {p.note && <div className="ml-3 italic">{p.note}</div>}
                     </div>
                   );
@@ -634,17 +625,19 @@ export default function App({ user, onSignOut }) {
             ))}
             <div className="mt-6 border-t-2 border-black pt-3">
               {totalSqft > 0 && <div className="text-sm mb-1"><b>Total flooring:</b> {totalSqft.toLocaleString()} sq ft</div>}
-              <table className="text-sm w-auto mb-2"><tbody>
-                <tr><td className="pr-6">Flooring</td><td className="text-right font-semibold">{money(flooringPrice)}</td></tr>
-                {groutCost > 0 && <tr><td className="pr-6">Grout</td><td className="text-right font-semibold">{money(groutCost)}</td></tr>}
-                {mortarCost > 0 && <tr><td className="pr-6">Mortar</td><td className="text-right font-semibold">{money(mortarCost)}</td></tr>}
-                <tr className="border-t border-black"><td className="pr-6 font-bold">Estimated material total</td><td className="text-right font-bold">{money(grandTotal)}</td></tr>
-              </tbody></table>
-              {hasMat && (<>
+              {grandTotal > 0 && (
+                <table className="text-sm w-auto mb-2"><tbody>
+                  {flooringPrice > 0 && <tr><td className="pr-6">Flooring</td><td className="text-right font-semibold">{money(flooringPrice)}</td></tr>}
+                  {groutCost > 0 && <tr><td className="pr-6">Grout</td><td className="text-right font-semibold">{money(groutCost)}</td></tr>}
+                  {mortarCost > 0 && <tr><td className="pr-6">Mortar</td><td className="text-right font-semibold">{money(mortarCost)}</td></tr>}
+                  <tr className="border-t border-black"><td className="pr-6 font-bold">Estimated material total</td><td className="text-right font-bold">{money(grandTotal)}</td></tr>
+                </tbody></table>
+              )}
+              {(mList.some((m) => m.order > 0) || gList.some((g) => g.order > 0)) && (<>
                 <div className="font-bold mb-1">Materials to Order (combined)</div>
                 <table className="text-sm w-auto"><tbody>
-                  {mList.map((m, i) => <tr key={"m" + i}><td className="pr-6">{m.product}</td><td className="font-semibold">{m.order} {m.unit} <span className="text-slate-500">({m.exact.toFixed(2)})</span></td></tr>)}
-                  {gList.map((g, i) => <tr key={"g" + i}><td className="pr-6">{g.product}{g.color !== "—" ? ` — ${g.color}` : ""}</td><td className="font-semibold">{g.order} {g.unit} <span className="text-slate-500">({g.exact.toFixed(2)})</span></td></tr>)}
+                  {mList.filter((m) => m.order > 0).map((m, i) => <tr key={"m" + i}><td className="pr-6">{m.product}</td><td className="font-semibold">{m.order} {m.unit} <span className="text-slate-500">({m.exact.toFixed(2)})</span></td></tr>)}
+                  {gList.filter((g) => g.order > 0).map((g, i) => <tr key={"g" + i}><td className="pr-6">{g.product}{g.color !== "—" ? ` — ${g.color}` : ""}</td><td className="font-semibold">{g.order} {g.unit} <span className="text-slate-500">({g.exact.toFixed(2)})</span></td></tr>)}
                 </tbody></table>
               </>)}
               <div className="text-xs mt-3 text-slate-600">Quantities and prices are estimates (incl. {settings.wastePct}% material waste). Confirm against product specs and final measurements before ordering.</div>
