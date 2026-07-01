@@ -82,7 +82,9 @@ export function underlayExact(p, s) {
 }
 
 export function getUnderlay(p, s) {
-  if (!p.underlay?.checked) return null;
+  // Misc lines are flat-priced extras — no underlayment, even if a checked
+  // state survives a type switch.
+  if (p.type === "misc" || !p.underlay?.checked) return null;
   const u = s.underlayments?.[p.underlay.product] || {};
   if (p.underlay.manual !== "" && p.underlay.manual != null) { const v = num(p.underlay.manual); return { exact: v, order: v, unit: u.unit, price: num(u.price), product: p.underlay.product }; }
   const ex = underlayExact(p, s); if (ex == null) return null;

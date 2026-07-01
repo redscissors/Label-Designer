@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { Search, Plus, Trash2, Settings, Save, Printer, FileText, Download, Upload, X, History, Check, Paperclip, Menu, LogOut, Archive, ArchiveRestore, ChevronRight, ChevronDown } from "lucide-react";
+import { Search, Plus, Trash2, Settings, Save, Printer, FileText, Download, Upload, X, History, Check, Paperclip, Menu, LogOut, Archive, ArchiveRestore, ChevronRight, ChevronDown, Hand } from "lucide-react";
 import { supabase } from "./lib/supabase.js";
 import { num, normalizeSettings, withDerived, serializeSettings, groutExact, mortarExact, getGrout, getMortar, underlayExact, getUnderlay, offeredGrouts, offeredMortars, offeredUnderlayments, catalogHasUnderlayments, isDuplicateName, addCompany, addProduct } from "./catalog.js";
 
-const TYPES = ["tile", "hardwood", "vinyl", "laminate", "carpet"];
-const TLBL = { tile: "Tile", hardwood: "Hardwood", vinyl: "Vinyl", laminate: "Laminate", carpet: "Carpet" };
+const TYPES = ["tile", "hardwood", "vinyl", "laminate", "carpet", "misc"];
+const TLBL = { tile: "Tile", hardwood: "Hardwood", vinyl: "Vinyl", laminate: "Laminate", carpet: "Carpet", misc: "Miscellaneous" };
 // The underlayment row is labelled per flooring type — a tile job wants "backer"
 // language, the soft/plank goods want "underlayment".
 const UNDERLAY_LABEL = { tile: "Tile Backer" };
 const underlayLabel = (type) => UNDERLAY_LABEL[type] || "Underlayment";
 // Editorial accents: each flooring type colours its selection card's left border
 // and active chip; each area's index marker cycles through the area palette.
-const TYPE_ACCENT = { tile: "oklch(0.55 0.08 232)", hardwood: "oklch(0.58 0.10 60)", vinyl: "oklch(0.55 0.07 158)", laminate: "oklch(0.57 0.10 32)", carpet: "oklch(0.53 0.08 320)" };
+const TYPE_ACCENT = { tile: "oklch(0.55 0.08 232)", hardwood: "oklch(0.58 0.10 60)", vinyl: "oklch(0.55 0.07 158)", laminate: "oklch(0.57 0.10 32)", carpet: "oklch(0.53 0.08 320)", misc: "oklch(0.55 0.02 270)" };
 const AREA_ACCENTS = ["oklch(0.60 0.11 45)", "oklch(0.58 0.07 232)", "oklch(0.56 0.10 350)", "oklch(0.57 0.08 145)", "oklch(0.63 0.10 75)", "oklch(0.57 0.07 200)"];
 const JOINTS = [{ label: '1/16"', v: 0.0625 }, { label: '1/8"', v: 0.125 }, { label: '3/16"', v: 0.1875 }];
 const THICK = [{ label: '1/8"', v: "0.125" }, { label: '3/16"', v: "0.1875" }, { label: '1/4"', v: "0.25" }, { label: '5/16"', v: "0.3125" }, { label: '3/8"', v: "0.375" }, { label: '7/16"', v: "0.4375" }, { label: '1/2"', v: "0.5" }, { label: '5/8"', v: "0.625" }, { label: '3/4"', v: "0.75" }];
@@ -59,6 +59,11 @@ export default function App({ user, onSignOut }) {
   const [namingVersion, setNamingVersion] = useState(false);
   const [versionName, setVersionName] = useState("");
   const [saveOk, setSaveOk] = useState(false);
+  // Active card drag: { pid, fromAid, to: { aid, index, y } | null }. The card
+  // follows the pointer imperatively (no re-render per move); state only changes
+  // when the drop target changes, to redraw the insertion bar / area highlight.
+  const [drag, setDrag] = useState(null);
+  const mainRef = useRef(null);
   const fileRef = useRef(null);
   const attRef = useRef(null);
   const areaRefs = useRef({});
@@ -66,17 +71,34 @@ export default function App({ user, onSignOut }) {
   const addAreaRef = useRef(null);
   const saveOkTimer = useRef(null);
 
-  // FLIP: slide the flooring-type labels to their new spots when the selection
-  // reorders them. Offset coords (not getBoundingClientRect) so the scaled
-  // wrapper doesn't skew the distances; WAAPI so we don't clobber CSS classes.
+  // FLIP: slide the flooring-type labels (and product cards) to their new spots
+  // when a render reorders them. Offset coords (not getBoundingClientRect) so
+  // CSS transforms don't skew the distances; WAAPI so we don't clobber classes.
+  // Chips measure relative to their card, otherwise a card that moves would
+  // double-animate the chips inside it. A just-dropped card animates from where
+  // the pointer released it (dropAnim) instead of from its old layout slot.
   const flipPos = useRef(new Map());
+  const dropAnim = useRef(null);
   useLayoutEffect(() => {
     const prev = flipPos.current;
     const next = new Map();
     document.querySelectorAll("[data-flip]").forEach((el) => {
       const id = el.getAttribute("data-flip");
-      const pos = { left: el.offsetLeft, top: el.offsetTop };
+      const card = el.closest("[data-prod-card]");
+      const base = card && card !== el ? { left: card.offsetLeft, top: card.offsetTop } : { left: 0, top: 0 };
+      const pos = { left: el.offsetLeft - base.left, top: el.offsetTop - base.top };
       next.set(id, pos);
+      if (el.dataset.dragging) return;
+      const drop = dropAnim.current;
+      if (drop && drop.id === id) {
+        dropAnim.current = null;
+        const r = el.getBoundingClientRect();
+        el.animate([
+          { transform: `translate(${drop.rect.left - r.left}px, ${drop.rect.top - r.top}px) scale(1.03)`, boxShadow: "0 14px 34px rgba(40,30,20,.22)" },
+          { transform: "translate(0,0) scale(1)", boxShadow: "0 0 0 rgba(40,30,20,0)" },
+        ], { duration: 280, easing: "cubic-bezier(.2,.8,.2,1)" });
+        return;
+      }
       const old = prev.get(id);
       if (old) {
         const dx = old.left - pos.left, dy = old.top - pos.top;
@@ -258,6 +280,102 @@ export default function App({ user, onSignOut }) {
   const addProduct = (aid) => { const a = sel.categories.find((x) => x.id === aid); updArea(aid, { products: [...a.products, newProduct()] }); };
   const updProduct = (aid, pid, patch) => { const a = sel.categories.find((x) => x.id === aid); updArea(aid, { products: a.products.map((p) => p.id === pid ? { ...p, ...patch } : p) }); };
   const delProduct = (aid, pid) => { const a = sel.categories.find((x) => x.id === aid); updArea(aid, { products: a.products.filter((p) => p.id !== pid) }); };
+  const moveProduct = (fromAid, pid, toAid, toIndex) => {
+    const p = sel.categories.find((x) => x.id === fromAid)?.products.find((x) => x.id === pid);
+    if (!p) return;
+    updateCust(sel.id, { categories: sel.categories.map((a) => {
+      if (a.id !== fromAid && a.id !== toAid) return a;
+      let products = a.id === fromAid ? a.products.filter((x) => x.id !== pid) : a.products;
+      if (a.id === toAid) { products = [...products]; products.splice(toIndex, 0, p); }
+      return { ...a, products };
+    }) });
+  };
+
+  // Pointer-driven drag of a product card (mouse + touch via pointer events).
+  // A short hold arms the drag, so brushing the handle doesn't yank the card;
+  // lifting or slipping more than a few pixels during the hold cancels it.
+  // The grabbed card pops out and tracks the pointer via CSS `translate`; drop
+  // targets are hit-tested with elementFromPoint (the card is pointer-events:
+  // none while held). Data is written once, on drop, through moveProduct.
+  const startDrag = (e, aid, p, pi) => {
+    if (e.button != null && e.button !== 0) return;
+    const node = e.currentTarget.closest("[data-prod-card]");
+    const main = mainRef.current;
+    if (!node || !main) return;
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY };
+    const last = { ...start };
+    const abort = () => { clearTimeout(timer); window.removeEventListener("pointermove", onHoldMove); window.removeEventListener("pointerup", abort); window.removeEventListener("pointercancel", abort); };
+    const onHoldMove = (ev) => { last.x = ev.clientX; last.y = ev.clientY; if (Math.hypot(last.x - start.x, last.y - start.y) > 6) abort(); };
+    const timer = setTimeout(() => { abort(); beginDrag(node, main, last.x, last.y, aid, p, pi); }, 220);
+    window.addEventListener("pointermove", onHoldMove);
+    window.addEventListener("pointerup", abort);
+    window.addEventListener("pointercancel", abort);
+  };
+  const beginDrag = (node, main, startX, startY, aid, p, pi) => {
+    const d = { startX, startY, lastX: startX, lastY: startY, startScroll: main.scrollTop, to: null, raf: 0 };
+    node.dataset.dragging = "1";
+    Object.assign(node.style, { position: "relative", zIndex: 50, pointerEvents: "none", transition: "scale .18s ease, rotate .18s ease, box-shadow .18s ease", scale: "1.03", rotate: "0.6deg", boxShadow: "0 14px 34px rgba(40,30,20,.22)", willChange: "translate" });
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+
+    // Add the scroll delta so the card stays glued to the pointer while the
+    // main pane auto-scrolls underneath it.
+    const applyPos = () => { node.style.translate = `${d.lastX - d.startX}px ${d.lastY - d.startY + (main.scrollTop - d.startScroll)}px`; };
+    const setTo = (to) => {
+      if (!to && !d.to) return;
+      if (to && d.to && to.aid === d.to.aid && to.index === d.to.index) return;
+      d.to = to;
+      setDrag((prev) => (prev ? { ...prev, to } : prev));
+    };
+    const hitTest = () => {
+      const el = document.elementFromPoint(d.lastX, d.lastY);
+      const areaEl = el && el.closest ? el.closest("[data-area-drop]") : null;
+      const list = areaEl && areaEl.querySelector("[data-prod-list]");
+      if (!list) return setTo(null);
+      const taid = areaEl.getAttribute("data-area-drop");
+      const cards = [...list.querySelectorAll("[data-prod-card]")].filter((c) => c !== node);
+      let index = 0;
+      for (const c of cards) { const r = c.getBoundingClientRect(); if (d.lastY > r.top + r.height / 2) index++; }
+      // Dropping back where it came from is a no-op — show no target.
+      if (taid === aid && index === pi) return setTo(null);
+      const lr = list.getBoundingClientRect();
+      const y = cards.length === 0 ? 0 : index < cards.length ? cards[index].getBoundingClientRect().top - lr.top - 9 : cards[cards.length - 1].getBoundingClientRect().bottom - lr.top + 3;
+      setTo({ aid: taid, index, y });
+    };
+    const onMove = (ev) => { d.lastX = ev.clientX; d.lastY = ev.clientY; applyPos(); hitTest(); };
+    const loop = () => {
+      const r = main.getBoundingClientRect(); const zone = 70; let dy = 0;
+      if (d.lastY < r.top + zone) dy = -Math.min(18, (r.top + zone - d.lastY) / 3);
+      else if (d.lastY > r.bottom - zone) dy = Math.min(18, (d.lastY - (r.bottom - zone)) / 3);
+      if (dy) { main.scrollTop += dy; applyPos(); hitTest(); }
+      d.raf = requestAnimationFrame(loop);
+    };
+    d.raf = requestAnimationFrame(loop);
+    const finish = (commit) => {
+      cancelAnimationFrame(d.raf);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      const rect = node.getBoundingClientRect();
+      delete node.dataset.dragging;
+      Object.assign(node.style, { position: "", zIndex: "", pointerEvents: "", transition: "", scale: "", rotate: "", boxShadow: "", willChange: "", translate: "" });
+      dropAnim.current = { id: p.id, rect };
+      if (commit && d.to) moveProduct(aid, p.id, d.to.aid, d.to.index);
+      setDrag(null);
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    const onKey = (ev) => { if (ev.key === "Escape") finish(false); };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
+    setDrag({ pid: p.id, fromAid: aid, to: null });
+  };
 
   const attPath = (custId, fileId) => `${custId}/${fileId}`;
   const addAttachment = async (e) => { const f = e.target.files?.[0]; if (!f) return; const id = uid(); try { const { error } = await supabase.storage.from(ATT_BUCKET).upload(attPath(sel.id, id), f, { contentType: f.type, upsert: true }); if (error) throw error; updateCust(sel.id, { attachments: [...(sel.attachments || []), { id, name: f.name, type: f.type, size: f.size }] }); ping("Attachment added"); } catch (x) { ping("Upload failed — file may be too large"); } e.target.value = ""; };
@@ -272,7 +390,7 @@ export default function App({ user, onSignOut }) {
   const dl = (blob, name) => { const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = name; a.click(); URL.revokeObjectURL(u); };
   const exportCSV = () => {
     const head = ["Customer", "Area", "Type", "Size", "Brand/Color", "$/SqFt", "QtyType", "Qty", "Line Total", "Note", "Grout", "Grout Color", "Joint", "Grout Exact", "Grout Order", "Mortar", "Mortar Exact", "Mortar Order", "Underlayment", "Underlayment Exact", "Underlayment Order"]; const rows = [];
-    sel.categories.forEach((a) => a.products.forEach((p) => { const size = p.type === "tile" ? `${p.L}x${p.W}x${p.thickness}` : p.sizeText; const j = JOINTS.find((x) => x.v === num(p.grout.joint))?.label || ""; const line = p.qtyType === "sqft" ? num(p.qty) * num(p.priceSqft) : ""; const G = getGrout(p, settings), M = getMortar(p, settings), U = getUnderlay(p, settings); rows.push([sel.name, a.name, TLBL[p.type], size, p.brandColor, p.priceSqft, p.qtyType, p.qty, line, p.note, G ? G.product : "", G ? G.color : "", G ? j : "", G ? G.exact.toFixed(2) : "", G ? G.order : "", M ? M.product : "", M ? M.exact.toFixed(2) : "", M ? M.order : "", U ? U.product : "", U ? U.exact.toFixed(2) : "", U ? U.order : ""]); }));
+    sel.categories.forEach((a) => a.products.forEach((p) => { const size = p.type === "tile" ? `${p.L}x${p.W}x${p.thickness}` : p.sizeText; const j = JOINTS.find((x) => x.v === num(p.grout.joint))?.label || ""; const line = p.type === "misc" ? num(p.priceSqft) : p.qtyType === "sqft" ? num(p.qty) * num(p.priceSqft) : ""; const G = getGrout(p, settings), M = getMortar(p, settings), U = getUnderlay(p, settings); rows.push([sel.name, a.name, TLBL[p.type], size, p.brandColor, p.priceSqft, p.qtyType, p.qty, line, p.note, G ? G.product : "", G ? G.color : "", G ? j : "", G ? G.exact.toFixed(2) : "", G ? G.order : "", M ? M.product : "", M ? M.exact.toFixed(2) : "", M ? M.order : "", U ? U.product : "", U ? U.exact.toFixed(2) : "", U ? U.order : ""]); }));
     const csv = [head, ...rows].map((r) => r.map((x) => `"${String(x ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     dl(new Blob([csv], { type: "text/csv" }), `${sel.name.replace(/\s+/g, "_")}_selections.csv`);
   };
@@ -306,12 +424,12 @@ export default function App({ user, onSignOut }) {
     ping("Backup restored");
   } catch (x) { ping("Invalid file"); } }; fr.readAsText(f); e.target.value = ""; };
 
-  let totalSqft = 0, flooringPrice = 0, groutCost = 0, mortarCost = 0, underlayCost = 0; const gAgg = {}, mAgg = {}, uAgg = {};
-  (sel?.categories || []).forEach((a) => a.products.forEach((p) => { if (p.qtyType === "sqft") { const sf = num(p.qty); totalSqft += sf; flooringPrice += sf * num(p.priceSqft); } const G = getGrout(p, settings); if (G) { groutCost += G.order * G.price; const k = G.product + "||" + (G.color || "—"); if (!gAgg[k]) gAgg[k] = { product: G.product, color: G.color || "—", unit: G.unit, exact: 0 }; gAgg[k].exact += G.exact; } const M = getMortar(p, settings); if (M) { mortarCost += M.order * M.price; const k = M.product; if (!mAgg[k]) mAgg[k] = { product: M.product, unit: M.unit, exact: 0 }; mAgg[k].exact += M.exact; } const U = getUnderlay(p, settings); if (U && U.product) { underlayCost += U.order * U.price; const k = U.product; if (!uAgg[k]) uAgg[k] = { product: U.product, unit: U.unit, exact: 0 }; uAgg[k].exact += U.exact; } }));
+  let totalSqft = 0, flooringPrice = 0, groutCost = 0, mortarCost = 0, underlayCost = 0, miscCost = 0; const gAgg = {}, mAgg = {}, uAgg = {};
+  (sel?.categories || []).forEach((a) => a.products.forEach((p) => { if (p.type === "misc") { miscCost += num(p.priceSqft); } else if (p.qtyType === "sqft") { const sf = num(p.qty); totalSqft += sf; flooringPrice += sf * num(p.priceSqft); } const G = getGrout(p, settings); if (G) { groutCost += G.order * G.price; const k = G.product + "||" + (G.color || "—"); if (!gAgg[k]) gAgg[k] = { product: G.product, color: G.color || "—", unit: G.unit, exact: 0 }; gAgg[k].exact += G.exact; } const M = getMortar(p, settings); if (M) { mortarCost += M.order * M.price; const k = M.product; if (!mAgg[k]) mAgg[k] = { product: M.product, unit: M.unit, exact: 0 }; mAgg[k].exact += M.exact; } const U = getUnderlay(p, settings); if (U && U.product) { underlayCost += U.order * U.price; const k = U.product; if (!uAgg[k]) uAgg[k] = { product: U.product, unit: U.unit, exact: 0 }; uAgg[k].exact += U.exact; } }));
   const gList = Object.values(gAgg).map((g) => ({ ...g, order: Math.ceil(g.exact) }));
   const mList = Object.values(mAgg).map((m) => ({ ...m, order: Math.ceil(m.exact) }));
   const uList = Object.values(uAgg).map((u) => ({ ...u, order: Math.ceil(u.exact) }));
-  const hasMat = gList.length > 0 || mList.length > 0 || uList.length > 0; const grandTotal = flooringPrice + groutCost + mortarCost + underlayCost;
+  const hasMat = gList.length > 0 || mList.length > 0 || uList.length > 0; const grandTotal = flooringPrice + groutCost + mortarCost + underlayCost + miscCost;
   const selCount = (sel?.categories || []).reduce((n, a) => n + a.products.length, 0);
   const sortCustomers = (list) => [...list].sort((a, b) => sortBy === "name" ? (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }) : (b.createdAt || 0) - (a.createdAt || 0));
   // When searching, span both active and archived (archived rows are badged in
@@ -405,7 +523,7 @@ export default function App({ user, onSignOut }) {
         </aside>
 
         {/* Main */}
-        <main className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="flex-1 overflow-y-auto">
           {!sel ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-6">
               <div className="w-[60px] h-[60px] rounded-2xl flex items-center justify-center mb-4 ft-serif" style={{ background: "color-mix(in oklab, var(--ft-brand) 14%, transparent)", color: "var(--ft-brand)", fontSize: 30 }}>F</div>
@@ -481,7 +599,7 @@ export default function App({ user, onSignOut }) {
                 {sel.categories.map((a, ai) => {
                   const areaColor = AREA_ACCENTS[ai % AREA_ACCENTS.length];
                   return (
-                  <div key={a.id} className="bg-white rounded-lg border border-slate-200 p-4 md:p-5">
+                  <div key={a.id} data-area-drop={a.id} className={`rounded-lg border p-4 md:p-5 transition-colors ${drag?.to?.aid === a.id ? "border-indigo-400 bg-indigo-50/40" : drag ? "border-dashed border-slate-300 bg-white" : "border-slate-200 bg-white"}`}>
                     <div className="flex items-center gap-2.5">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: areaColor }} />
                       <span className="ft-mono text-sm shrink-0" style={{ color: areaColor }}>{String(ai + 1).padStart(2, "0")}</span>
@@ -490,8 +608,8 @@ export default function App({ user, onSignOut }) {
                       <button onClick={() => delArea(a.id)} className="ft-noprint text-slate-300 hover:text-red-500"><Trash2 size={15} /></button>
                     </div>
 
-                    <div className="mt-3 space-y-3">
-                      {a.products.map((p) => {
+                    <div data-prod-list="1" className="relative mt-3 space-y-3">
+                      {a.products.map((p, pi) => {
                         const G = getGrout(p, settings), M = getMortar(p, settings);
                         const gEx = groutExact(p, settings), mEx = mortarExact(p, settings);
                         const sf = p.qtyType === "sqft" ? num(p.qty) : 0; const line = sf * num(p.priceSqft);
@@ -534,7 +652,7 @@ export default function App({ user, onSignOut }) {
                         const selAccent = TYPE_ACCENT[p.type] || "var(--ft-text)";
                         const typeOrder = TYPES.includes(p.type) ? [p.type, ...TYPES.filter((t) => t !== p.type)] : TYPES;
                         return (
-                          <div key={p.id} className="rounded-lg border border-slate-200 bg-white p-3 md:p-3.5" style={{ borderLeft: `3px solid ${selAccent}` }}>
+                          <div key={p.id} data-prod-card={p.id} data-flip={p.id} className="rounded-lg border border-slate-200 bg-white p-3 md:p-3.5" style={{ borderLeft: `3px solid ${selAccent}` }}>
                             <div className="ft-noprint flex items-center gap-2 mb-2.5">
                               <div className="flex flex-wrap items-center gap-1.5 flex-1">
                                 {typeOrder.map((t) => {
@@ -556,11 +674,13 @@ export default function App({ user, onSignOut }) {
                                 </div>
                                 <select value={p.thickness} onChange={(e) => updProduct(a.id, p.id, { thickness: e.target.value })} className="shrink-0 border-l border-slate-200 px-1.5 py-1.5 bg-transparent focus:outline-none focus:bg-white" title="Thickness">{!thickKnown && <option value={p.thickness}>{p.thickness}"</option>}{THICK.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select>
                                 <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 border-l border-slate-200 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Brand / color" />
-                              </>) : (<>
-                                <input value={p.sizeText} onChange={(e) => updProduct(a.id, p.id, { sizeText: e.target.value })} className="w-28 shrink-0 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Size" />
+                              </>) : p.type === "misc" ? (
+                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Description" />
+                              ) : (<>
+                                <input value={p.sizeText} onChange={(e) => updProduct(a.id, p.id, { sizeText: e.target.value })} className="w-28 shrink-0 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder={p.type === "hardwood" ? "Width" : "Size"} title={p.type === "hardwood" ? "Plank width (in)" : "Size"} />
                                 <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 border-l border-slate-200 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Brand / color" />
                               </>)}
-                              <div className="relative w-20 shrink-0 border-l border-slate-200"><span className="absolute left-2 top-1.5 text-slate-400">$</span><input type="number" value={p.priceSqft} onChange={(e) => updProduct(a.id, p.id, { priceSqft: e.target.value })} className="w-full pl-5 pr-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="/sqft" title="Price per sq ft" /></div>
+                              <div className="relative w-20 shrink-0 border-l border-slate-200"><span className="absolute left-2 top-1.5 text-slate-400">$</span><input type="number" value={p.priceSqft} onChange={(e) => updProduct(a.id, p.id, { priceSqft: e.target.value })} className="w-full pl-5 pr-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder={p.type === "misc" ? "0.00" : "/sqft"} title={p.type === "misc" ? "Price (flat)" : "Price per sq ft"} /></div>
                             </div>
 
                             {p.type === "tile" ? (
@@ -610,7 +730,7 @@ export default function App({ user, onSignOut }) {
                               </div>
                               <div className="mt-2">{underlayCard}</div>
                               </>
-                            ) : (
+                            ) : p.type === "misc" ? null : (
                               <>
                               <div className="flex items-center gap-2 mt-1.5">
                                 <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className={inp + " !w-16 shrink-0"} placeholder="0" />
@@ -621,10 +741,14 @@ export default function App({ user, onSignOut }) {
                               </>
                             )}
 
-                            <input value={p.note} onChange={(e) => updProduct(a.id, p.id, { note: e.target.value })} placeholder="note…" className="w-full mt-2 text-sm text-slate-500 bg-transparent focus:outline-none placeholder:text-slate-300" />
+                            <div className="mt-2 flex items-end gap-2">
+                              <input value={p.note} onChange={(e) => updProduct(a.id, p.id, { note: e.target.value })} placeholder="note…" className="flex-1 min-w-0 text-sm text-slate-500 bg-transparent focus:outline-none placeholder:text-slate-300" />
+                              <button onPointerDown={(e) => startDrag(e, a.id, p, pi)} title="Drag to reorder or move to another area" className="ft-noprint shrink-0 -m-1 p-1 rounded touch-none cursor-grab text-slate-300 hover:text-slate-500"><Hand size={15} /></button>
+                            </div>
                           </div>
                         );
                       })}
+                      {drag?.to?.aid === a.id && <div className="absolute left-1 right-1 h-1.5 rounded-full bg-indigo-600 pointer-events-none" style={{ top: drag.to.y, marginTop: 0 }} />}
                     </div>
                     <button onClick={() => addProduct(a.id)} className="ft-noprint mt-3 w-full flex items-center justify-center gap-1.5 text-sm font-semibold rounded-md border border-dashed border-slate-300 py-2 text-slate-500 hover:border-indigo-300 hover:text-indigo-700 transition"><Plus size={14} /> Add product</button>
                   </div>
@@ -632,7 +756,7 @@ export default function App({ user, onSignOut }) {
                 })}
               </div>
 
-              {(totalSqft > 0 || hasMat) && (
+              {(totalSqft > 0 || hasMat || miscCost > 0) && (
                 <div className="mt-5 bg-white border border-slate-200 rounded-lg" style={{ padding: "clamp(18px,2.4vw,28px)" }}>
                   <div className="ft-eyebrow-accent text-[10px] mb-1.5">Materials Estimate</div>
                   <h3 className="ft-serif mb-5" style={{ fontSize: "clamp(22px,2.6vw,30px)", lineHeight: 1 }}>Order summary</h3>
@@ -670,6 +794,7 @@ export default function App({ user, onSignOut }) {
                         <div className="flex items-center justify-between"><span className="text-[13px] text-slate-500">Grout</span><span className="ft-mono text-[13px]">{money(groutCost)}</span></div>
                         <div className="flex items-center justify-between"><span className="text-[13px] text-slate-500">Mortar</span><span className="ft-mono text-[13px]">{money(mortarCost)}</span></div>
                         {underlayCost > 0 && <div className="flex items-center justify-between"><span className="text-[13px] text-slate-500">Underlayment</span><span className="ft-mono text-[13px]">{money(underlayCost)}</span></div>}
+                        {miscCost > 0 && <div className="flex items-center justify-between"><span className="text-[13px] text-slate-500">Miscellaneous</span><span className="ft-mono text-[13px]">{money(miscCost)}</span></div>}
                         <div className="flex items-center justify-between items-baseline mt-1.5 pt-3" style={{ borderTop: "2px solid var(--ft-text)" }}><span className="text-sm font-semibold">Total</span><span className="ft-serif" style={{ fontSize: 30, lineHeight: 1 }}>{money(grandTotal)}</span></div>
                       </div>
                       <div className="text-[11px] text-slate-400 mt-3">Figures include {settings.wastePct}% material waste. Verify before ordering.</div>
@@ -701,7 +826,11 @@ export default function App({ user, onSignOut }) {
                   const sf = p.qtyType === "sqft" ? num(p.qty) : 0; const line = sf * num(p.priceSqft);
                   return (
                     <div key={p.id} className="mt-2 text-sm">
-                      <div><b>{TLBL[p.type]}</b>{size ? ` · ${size}` : ""}{p.brandColor ? ` · ${p.brandColor}` : ""}{p.qty ? ` · ${p.qty} ${p.qtyType === "sqft" ? "sq ft" : "units"}` : ""}{num(p.priceSqft) > 0 ? ` @ ${money(num(p.priceSqft))}/${p.qtyType === "count" ? "ea" : "sf"}${line > 0 ? ` = ${money(line)}` : ""}` : ""}</div>
+                      {p.type === "misc" ? (
+                        <div><b>{TLBL[p.type]}</b>{p.brandColor ? ` · ${p.brandColor}` : ""}{num(p.priceSqft) > 0 ? ` = ${money(num(p.priceSqft))}` : ""}</div>
+                      ) : (
+                        <div><b>{TLBL[p.type]}</b>{size ? ` · ${size}` : ""}{p.brandColor ? ` · ${p.brandColor}` : ""}{p.qty ? ` · ${p.qty} ${p.qtyType === "sqft" ? "sq ft" : "units"}` : ""}{num(p.priceSqft) > 0 ? ` @ ${money(num(p.priceSqft))}/${p.qtyType === "count" ? "ea" : "sf"}${line > 0 ? ` = ${money(line)}` : ""}` : ""}</div>
+                      )}
                       {p.type === "tile" && p.grout.checked && (G && G.order > 0 ? <div className="ml-3">Grout: {p.grout.product}{p.grout.color ? ` — ${p.grout.color}` : ""}{j ? `, ${j} joint` : ""} → {G.order} {G.unit} ({G.exact.toFixed(2)}){G.price > 0 ? ` = ${money(G.order * G.price)}` : ""}</div> : <div className="ml-3">Grout: {p.grout.product}{p.grout.color ? ` — ${p.grout.color}` : ""}{j ? `, ${j} joint` : ""}</div>)}
                       {M && (M.order > 0 ? <div className="ml-3">Mortar: {M.product} → {M.order} {M.unit} ({M.exact.toFixed(2)}){M.price > 0 ? ` = ${money(M.order * M.price)}` : ""}</div> : <div className="ml-3">Mortar: {M.product}</div>)}
                       {U && U.product && (U.order > 0 ? <div className="ml-3">{underlayLabel(p.type)}: {U.product} → {U.order} {U.unit} ({U.exact.toFixed(2)}){U.price > 0 ? ` = ${money(U.order * U.price)}` : ""}</div> : <div className="ml-3">{underlayLabel(p.type)}: {U.product}</div>)}
@@ -719,6 +848,7 @@ export default function App({ user, onSignOut }) {
                   {groutCost > 0 && <tr><td className="pr-6">Grout</td><td className="text-right font-semibold">{money(groutCost)}</td></tr>}
                   {mortarCost > 0 && <tr><td className="pr-6">Mortar</td><td className="text-right font-semibold">{money(mortarCost)}</td></tr>}
                   {underlayCost > 0 && <tr><td className="pr-6">Underlayment</td><td className="text-right font-semibold">{money(underlayCost)}</td></tr>}
+                  {miscCost > 0 && <tr><td className="pr-6">Miscellaneous</td><td className="text-right font-semibold">{money(miscCost)}</td></tr>}
                   <tr className="border-t border-black"><td className="pr-6 font-bold">Estimated material total</td><td className="text-right font-bold">{money(grandTotal)}</td></tr>
                 </tbody></table>
               )}
