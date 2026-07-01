@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULTS, GROUTS, MORTARS, mergeSettings, seedCatalog, resolveCatalog, normalizeSettings, groutExact, mortarExact, getGrout, getMortar } from "./catalog.js";
+import { DEFAULTS, GROUTS, MORTARS, mergeSettings, seedCatalog, resolveCatalog, normalizeSettings, normalizeCatalog, groutExact, mortarExact, getGrout, getMortar, underlayExact, getUnderlay, offeredUnderlayments, catalogHasUnderlayments } from "./catalog.js";
 
 // A fully-checked tile selection used by the math tests.
 const tile = (over = {}) => ({
@@ -233,4 +233,61 @@ test("addProduct appends an enabled product whose numbers resolve by name", () =
   assert.equal(grouts["PermaColor Pro"].coverage, 120);
   const addedCo = cat.companies.find((c) => c.id === co.id);
   assert.equal(addedCo.grouts.find((g) => g.name === "PermaColor Pro").enabled, true);
+});
+
+// --- Underlayment: coverage math, type-scoped offering, and seed backfill -----
+
+const un = (over = {}) => ({ type: "tile", qtyType: "sqft", qty: "200", underlay: { checked: true, product: "Ditra Underlayment Uncoupling Membrane", manual: "" }, ...over });
+
+test("seedCatalog seeds Ditra under Schluter, tagged tile-only", () => {
+  const cat = seedCatalog(mergeSettings(undefined));
+  const schluter = cat.companies.find((c) => c.name === "Schluter");
+  const ditra = schluter.underlayments.find((u) => u.name === "Ditra Underlayment Uncoupling Membrane");
+  assert.ok(ditra, "Ditra seeded");
+  assert.equal(ditra.enabled, true);
+  assert.deepEqual(ditra.types, ["tile"]);
+  assert.equal(ditra.coverage, 54);
+});
+
+test("underlayExact scales off square footage with the waste factor (no tile volumetrics)", () => {
+  const s = normalizeSettings(undefined); // 10% waste, Ditra coverage 54
+  assert.equal(underlayExact(un(), s), 200 * 1.1 / 54);
+  // Independent of tile L/W/thickness, unlike grout.
+  assert.equal(underlayExact(un({ L: "24", W: "24", thickness: "0.5" }), s), 200 * 1.1 / 54);
+});
+
+test("getUnderlay rounds up and honors a manual override", () => {
+  const s = normalizeSettings(undefined);
+  const auto = getUnderlay(un(), s);
+  assert.equal(auto.order, Math.ceil(200 * 1.1 / 54));
+  assert.equal(auto.unit, "rolls");
+  const manual = getUnderlay(un({ underlay: { checked: true, product: "Ditra Underlayment Uncoupling Membrane", manual: "3" } }), s);
+  assert.equal(manual.order, 3);
+});
+
+test("getUnderlay applies to non-tile types too (unlike grout/mortar)", () => {
+  const s = normalizeSettings(undefined);
+  // Add a carpet-tagged underlayment and select it on a carpet product.
+  const co = s.catalog.companies[0];
+  const cat = addProduct(s.catalog, co.id, "underlayments", { name: "Carpet Pad", coverage: 100, unit: "rolls", price: 0, types: ["carpet"] });
+  const s2 = { ...s, ...resolveCatalog(cat) };
+  const p = { type: "carpet", qtyType: "sqft", qty: "300", underlay: { checked: true, product: "Carpet Pad", manual: "" } };
+  assert.equal(getUnderlay(p, s2).order, Math.ceil(300 * 1.1 / 100));
+});
+
+test("offeredUnderlayments filters by flooring type; unchecked box returns null exact", () => {
+  const s = normalizeSettings(undefined);
+  assert.ok(offeredUnderlayments(s.catalog, "tile").includes("Ditra Underlayment Uncoupling Membrane"));
+  assert.equal(offeredUnderlayments(s.catalog, "carpet").includes("Ditra Underlayment Uncoupling Membrane"), false);
+  assert.equal(getUnderlay({ ...un(), underlay: { checked: false, product: "", manual: "" } }, s), null);
+});
+
+test("backfill: a pre-underlayment catalog gains Ditra; catalogHasUnderlayments tracks it", () => {
+  const seeded = seedCatalog(mergeSettings(undefined));
+  // Simulate the stored shared catalog from before underlayments existed.
+  const legacy = { companies: seeded.companies.map(({ underlayments, ...co }) => co) };
+  assert.equal(catalogHasUnderlayments(legacy), false);
+  const normalized = normalizeCatalog(legacy);
+  assert.equal(catalogHasUnderlayments(normalized), true);
+  assert.ok(offeredUnderlayments(normalized, "tile").includes("Ditra Underlayment Uncoupling Membrane"));
 });
