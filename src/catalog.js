@@ -7,6 +7,10 @@
 export const GROUTS = ["PermaColor Select", "SpectraLOCK 1", "SpectraLOCK PRO", "CEG-Lite", "Tec Power Grout"];
 export const MORTARS = ["ProLite", "AcrylPro", "Schluter All Set"];
 
+// The flooring types a product row can be. Underlayment products are tagged with
+// the subset of these they apply to (an empty tag list = applies to all types).
+export const FLOOR_TYPES = ["tile", "hardwood", "vinyl", "laminate", "carpet"];
+
 // CEG-Lite coverage (187 sq ft / Part A+B unit) is the manufacturer's published
 // number at this app's 12×12×3/8" tile, 1/8" joint baseline. Tec Power Grout and
 // Schluter All Set numbers are first-pass estimates the team is expected to
@@ -65,6 +69,26 @@ export function getGrout(p, s) {
   return { exact: ex, order: Math.ceil(ex), unit: g.unit, price: num(g.price), product: p.grout.product, color: p.grout.color };
 }
 
+// Underlayment / backer coverage is a flat area rate: one unit (roll, sheet,
+// bag) covers `coverage` sq ft, so it scales straight off square footage with
+// the waste factor — no tile-size volumetrics like grout. Applies to every
+// flooring type, not just tile. A manual override wins, same as grout/mortar.
+export function underlayExact(p, s) {
+  if (p.qtyType !== "sqft") return null;
+  const sqft = num(p.qty); if (!sqft) return 0;
+  const u = s.underlayments?.[p.underlay.product]; if (!u) return null;
+  const cov = num(u.coverage); if (!cov) return null;
+  return sqft * (1 + num(s.wastePct) / 100) / cov;
+}
+
+export function getUnderlay(p, s) {
+  if (!p.underlay?.checked) return null;
+  const u = s.underlayments?.[p.underlay.product] || {};
+  if (p.underlay.manual !== "" && p.underlay.manual != null) { const v = num(p.underlay.manual); return { exact: v, order: v, unit: u.unit, price: num(u.price), product: p.underlay.product }; }
+  const ex = underlayExact(p, s); if (ex == null) return null;
+  return { exact: ex, order: Math.ceil(ex), unit: u.unit, price: num(u.price), product: p.underlay.product };
+}
+
 // --- Catalog (Company → Product) — ADR 0002 ----------------------------------
 // The catalog is the source of truth for which grout/mortar products exist and
 // their numbers. Jobs link to a product by NAME only; the math resolves a name
@@ -84,8 +108,19 @@ const SEED_COMPANIES = [
   { name: "Schluter", grouts: [], mortars: ["Schluter All Set"] },
 ];
 
+// Starter underlayment/backer products, grouped by company. Coverage numbers are
+// first-pass estimates the team is expected to calibrate in Settings (Ditra's
+// 1/8" roll is ~54 sq ft). `types` restricts which flooring types offer it — an
+// empty list would mean "all types". The rest of each category's underlayments
+// are added by the team through the Settings catalog editor.
+const SEED_UNDERLAYMENTS = [
+  { company: "Schluter", name: "Ditra Underlayment Uncoupling Membrane", coverage: 54, unit: "rolls", price: 0, types: ["tile"] },
+];
+
 const groutFields = (g) => ({ coverage: g?.coverage ?? 0, unit: g?.unit ?? "units", price: g?.price ?? 0 });
 const mortarFields = (m) => ({ tier1: m?.tier1 ?? 0, tier2: m?.tier2 ?? 0, tier3: m?.tier3 ?? 0, unit: m?.unit ?? "units", price: m?.price ?? 0 });
+const underlayFields = (u) => ({ coverage: u?.coverage ?? 0, unit: u?.unit ?? "rolls", price: u?.price ?? 0, types: (Array.isArray(u?.types) ? u.types : []).filter((t) => FLOOR_TYPES.includes(t)) });
+const seedUnderlaysFor = (companyName) => SEED_UNDERLAYMENTS.filter((u) => u.company === companyName).map((u) => ({ id: cid(), name: u.name, enabled: true, ...underlayFields(u) }));
 
 // Build a fresh catalog from a flat Settings object (waste-free), grouping the
 // built-in names under SEED_COMPANIES and carrying each product's numbers
@@ -100,6 +135,7 @@ export function seedCatalog(flat) {
     id: cid(), name: co.name, enabled: true,
     grouts: co.grouts.map((name) => ({ id: cid(), name, enabled: true, ...groutFields(g[name]) })),
     mortars: co.mortars.map((name) => ({ id: cid(), name, enabled: true, ...mortarFields(m[name]) })),
+    underlayments: seedUnderlaysFor(co.name),
   }));
   const extraG = Object.keys(g).filter((n) => !seededG.has(n));
   const extraM = Object.keys(m).filter((n) => !seededM.has(n));
@@ -108,6 +144,7 @@ export function seedCatalog(flat) {
       id: cid(), name: "Unassigned", enabled: true,
       grouts: extraG.map((name) => ({ id: cid(), name, enabled: true, ...groutFields(g[name]) })),
       mortars: extraM.map((name) => ({ id: cid(), name, enabled: true, ...mortarFields(m[name]) })),
+      underlayments: [],
     });
   }
   return { companies };
@@ -115,18 +152,32 @@ export function seedCatalog(flat) {
 
 const normGroutProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...groutFields(p) });
 const normMortarProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...mortarFields(p) });
+const normUnderlayProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...underlayFields(p) });
+
+// Underlayment is a later addition (the catalog predates it). Records seeded
+// before it exist with no underlayments at all; when we see such a catalog, drop
+// the starter underlayments into their companies by name so the built-in Ditra
+// entry appears. Once any underlayment exists we leave the catalog untouched.
+function backfillUnderlayments(companies) {
+  if (companies.some((co) => (co.underlayments || []).length)) return companies;
+  return companies.map((co) => { const seeds = seedUnderlaysFor(co.name); return seeds.length ? { ...co, underlayments: [...co.underlayments, ...seeds] } : co; });
+}
 
 export function normalizeCatalog(catalog) {
-  return {
-    companies: (catalog?.companies || []).map((co) => ({
-      id: co?.id || cid(),
-      name: co?.name || "Company",
-      enabled: co?.enabled !== false,
-      grouts: (co?.grouts || []).map(normGroutProduct),
-      mortars: (co?.mortars || []).map(normMortarProduct),
-    })),
-  };
+  const companies = (catalog?.companies || []).map((co) => ({
+    id: co?.id || cid(),
+    name: co?.name || "Company",
+    enabled: co?.enabled !== false,
+    grouts: (co?.grouts || []).map(normGroutProduct),
+    mortars: (co?.mortars || []).map(normMortarProduct),
+    underlayments: (co?.underlayments || []).map(normUnderlayProduct),
+  }));
+  return { companies: backfillUnderlayments(companies) };
 }
+
+// True when the stored catalog has no underlayment products yet — used by the
+// loader to decide whether the backfilled starters need persisting.
+export const catalogHasUnderlayments = (catalog) => !!(catalog?.companies || []).some((co) => (co.underlayments || []).length);
 
 // Names are matched case- and whitespace-insensitively, consistent with how a
 // job's stored name keys into the catalog at lookup time. Product names must be
@@ -149,7 +200,8 @@ export function addCompany(catalog, name) {
 // caller's gate (see isDuplicateName) — this is the pure append.
 export function addProduct(catalog, companyId, kind, fields) {
   const base = { id: cid(), name: String(fields?.name || "").trim(), enabled: true };
-  const product = kind === "grouts" ? { ...base, ...groutFields(fields) } : { ...base, ...mortarFields(fields) };
+  const shape = kind === "grouts" ? groutFields(fields) : kind === "mortars" ? mortarFields(fields) : underlayFields(fields);
+  const product = { ...base, ...shape };
   return { companies: (catalog?.companies || []).map((co) => co.id === companyId ? { ...co, [kind]: [...(co[kind] || []), product] } : co) };
 }
 
@@ -158,12 +210,13 @@ export function addProduct(catalog, companyId, kind, fields) {
 // since-hidden product still computes. Names are unique per kind, so last write
 // on a duplicate would win — but uniqueness is enforced on add.
 export function resolveCatalog(catalog) {
-  const grouts = {}, mortars = {};
+  const grouts = {}, mortars = {}, underlayments = {};
   for (const co of (catalog?.companies || [])) {
     for (const p of (co.grouts || [])) grouts[p.name] = groutFields(p);
     for (const p of (co.mortars || [])) mortars[p.name] = mortarFields(p);
+    for (const p of (co.underlayments || [])) underlayments[p.name] = underlayFields(p);
   }
-  return { grouts, mortars };
+  return { grouts, mortars, underlayments };
 }
 
 // A product is offered in a job dropdown only when BOTH its company and itself
@@ -178,6 +231,14 @@ const offeredNames = (catalog, kind) => {
 };
 export const offeredGrouts = (catalog) => offeredNames(catalog, "grouts");
 export const offeredMortars = (catalog) => offeredNames(catalog, "mortars");
+
+// Underlayments are additionally filtered by flooring type: a product is offered
+// to a job only when its `types` tag includes that type (an empty tag = all).
+export const offeredUnderlayments = (catalog, type) => {
+  const names = [];
+  for (const co of (catalog?.companies || [])) for (const p of (co.underlayments || [])) if (isOffered(co, p) && (!(p.types || []).length || p.types.includes(type))) names.push(p.name);
+  return names;
+};
 
 // The in-memory settings object carries the catalog plus derived grouts/mortars
 // maps the math reads. Only { wastePct, catalog } is persisted.
