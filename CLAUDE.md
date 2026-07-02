@@ -43,7 +43,7 @@ src/
   App.jsx           # the FloorTrack application (props: { user, onSignOut })
   lib/supabase.js   # Supabase client (reads VITE_ env vars)
 supabase/
-  schema.sql        # run once: app_data + customers tables + RLS
+  schema.sql        # run once: app_data + customers + versions tables + RLS
   storage.sql       # run once: attachments bucket + storage policies
 netlify.toml        # build config for Netlify
 ```
@@ -57,10 +57,13 @@ shared; per-user `settings` still live in the `app_data.data` jsonb blob.
 app_data.data : { settings: Settings }          // per user
 
 customers row : { id (text), owner_id (uuid), visibility:"private|public",
-                  data: Customer, created_at, updated_at }
+                  archived (bool), data: Customer, created_at, updated_at }
+
+versions row  : { id (text), customer_id, label, auto (bool), saved_at,
+                  snapshot: Area[] }            // one row per saved version
 
 Customer { id, name, address, phone, email, notes, createdAt,
-           categories: Area[], versions: Version[], attachments: Att[] }
+           categories: Area[], attachments: Att[] }
 Area     { id, name, note, products: Product[] }
 Product  { id, type:"tile|hardwood|vinyl|laminate|carpet",
            L, W, thickness, sizeText, brandColor, priceSqft,
@@ -69,10 +72,17 @@ Product  { id, type:"tile|hardwood|vinyl|laminate|carpet",
            underlay:{checked,product,manual,install} }
            // underlay.install = also order the catalog-defined install
            // materials (backer mortar, screws) for the chosen underlayment
-Version  { id, label, savedAt, snapshot: Area[] }
 Att      { id, name, type, size }   // file bytes live in Storage, not here
 Settings { wastePct, mortars{...}, grouts{...} }
 ```
+
+**Versions** (issue 003) live in their own table so customer saves never carry
+history. In memory a customer holds version *metadata* only (`{ id, label,
+auto, savedAt }`, loaded with the detail); the snapshot is fetched on restore.
+Besides hand-named versions (unlimited), an **auto version** is saved when a
+customer is deselected (or the user signs out) with its `categories` changed
+since open — the newest 5 autos per customer are kept, autos never evict named
+versions. Version access follows the customer's RLS rules.
 
 **Sharing.** `visibility` is `private` (owner only) or `public` (every signed-in
 user can see AND edit it — last-write-wins). RLS enforces this: read = own or
@@ -102,10 +112,11 @@ The un-rounded "exact" value is always shown next to the rounded order quantity.
 
 - Customer mutations go through `updateCust(id, patch)` → optimistic `setData` +
   an `UPDATE` of that one row's `data`. Sharing changes use `setVisibility`,
-  create/delete use `addCustomer`/`delCustomer`, and settings use `setSettings`
-  (writes the `app_data` blob). Keep these write paths; don't write ad hoc.
-  `updateCust` never sends `owner_id`/`visibility`, so the guard trigger only
-  fires for the explicit visibility toggle.
+  archiving uses `setArchived`, create/delete use `addCustomer`/`delCustomer`,
+  versions use `insertVersion`/`delVersion`/`loadVersion` (their own table,
+  never the blob), and settings use `setSettings`. Keep these write paths;
+  don't write ad hoc. `updateCust` never sends `owner_id`/`visibility`, so the
+  guard trigger only fires for the explicit visibility toggle.
 - `normC/normA/normP` and `mergeSettings` normalize loaded/imported data — extend
   these when adding fields so old records stay valid.
 - The theme (monochrome, inspired by matthaeusjandl.com) works by **overriding

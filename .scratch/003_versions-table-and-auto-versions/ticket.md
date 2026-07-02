@@ -1,8 +1,8 @@
 ---
 issue_type: Task
 summary: Move saved versions out of the customer blob into their own table, auto-snapshot a job when someone stops working on it with changes made (keep the newest 5 autos, unlimited named), and reshape the sidebar into a recency-first list with server-side search.
-status: open
-labels: [ready-for-agent]
+status: done
+labels: [ready-for-human]
 ---
 
 # Versions as first-class records, auto-versions on deselect, recency-first list
@@ -203,3 +203,22 @@ in conversation with the product owner (2026-07-02)._
   the file format backward-compatible); `importBackup` inserts version rows
   (fresh ids, remapped `customer_id`) instead of leaving them in the blob —
   which also transparently handles pre-change backup files.
+
+## Implementation notes (shipped)
+
+- Both migration paths landed: the SQL block in `schema.sql` (runs as table
+  owner, reaches every user's private rows, preserves `updated_at` by toggling
+  the trigger) **and** a client-side safety net in `loadDetail` that lifts any
+  versions still embedded in a blob into the table on open. So deploy order is
+  forgiving — but **run `schema.sql` in the SQL editor when shipping this**,
+  or un-opened customers keep history in their blobs until first opened.
+- In memory a customer carries version *metadata* only (`{id, label, auto,
+  savedAt}`); the snapshot is fetched on restore. The header count button and
+  modal work off metadata.
+- Server-side search works by merging matching light rows into the loaded
+  list (debounced 250ms); the visible filter stays a client-side substring
+  test, so results are instant while typing and complete once the server
+  responds. Groundwork for a future non-exhaustive initial load.
+- "All customers" starts collapsed once the non-recent list exceeds 25 rows;
+  the mine/shared sections were replaced by the flat grouped list (Public and
+  Archived badges unchanged).
