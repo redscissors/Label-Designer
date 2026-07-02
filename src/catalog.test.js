@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULTS, GROUTS, MORTARS, mergeSettings, seedCatalog, resolveCatalog, normalizeSettings, normalizeCatalog, groutExact, mortarExact, getGrout, getMortar, underlayExact, getUnderlay, offeredUnderlayments, catalogHasSeedUnderlayments } from "./catalog.js";
+import { DEFAULTS, GROUTS, MORTARS, mergeSettings, seedCatalog, resolveCatalog, normalizeSettings, normalizeCatalog, groutExact, mortarExact, getGrout, getMortar, underlayExact, getUnderlay, getUnderlayInstall, offeredUnderlayments, catalogHasSeedUnderlayments } from "./catalog.js";
 
 // A fully-checked tile selection used by the math tests.
 const tile = (over = {}) => ({
@@ -325,4 +325,89 @@ test("backfill merges new starters into a catalog that already has Ditra, withou
   // Re-running the backfill on its own output is a no-op (no duplicates).
   const again = normalizeCatalog(normalized);
   assert.equal(again.companies.flatMap((co) => co.underlayments).length, normalized.companies.flatMap((co) => co.underlayments).length);
+});
+
+// --- Underlayment install materials (backer mortar + screws) ------------------
+
+const hb = (over = {}) => ({ type: "tile", qtyType: "sqft", qty: "200", underlay: { checked: true, product: "HardieBacker", manual: "", install: true, installMortars: {} }, ...over });
+
+test("seedCatalog seeds install materials: linked mortars for HardieBacker/Ditra, custom screws for HardieBacker", () => {
+  const cat = seedCatalog(mergeSettings(undefined));
+  const hardie = cat.companies.find((c) => c.name === "James Hardie").underlayments.find((u) => u.name === "HardieBacker");
+  assert.deepEqual(hardie.install.map((m) => m.kind), ["mortar", "custom"]);
+  assert.equal(hardie.install[0].product, "ProLite");
+  assert.equal(hardie.install[1].name, "BackerOn screws");
+  assert.ok(hardie.install.every((m) => m.id && m.coverage > 0));
+  const ditra = cat.companies.find((c) => c.name === "Schluter").underlayments[0];
+  assert.deepEqual(ditra.install.map((m) => [m.kind, m.product]), [["mortar", "Schluter All Set"]]);
+  // A mortar row carries no unit/price of its own — they resolve from the mortar.
+  assert.equal(hardie.install[0].unit, undefined);
+  assert.equal(hardie.install[0].price, undefined);
+});
+
+test("getUnderlayInstall scales off sq ft; a mortar row resolves unit and price from the mortar catalog", () => {
+  const s = normalizeSettings({ catalog: undefined, wastePct: 10 }); // seeds: ProLite 50, screws 75 sq ft/unit
+  s.catalog.companies.forEach((co) => co.mortars.forEach((m) => { if (m.name === "ProLite") m.price = 20; }));
+  const s2 = { ...s, ...resolveCatalog(s.catalog) };
+  const items = getUnderlayInstall(hb(), s2);
+  assert.equal(items.length, 2);
+  assert.deepEqual([items[0].kind, items[0].name, items[0].unit, items[0].price], ["mortar", "ProLite", "bags", 20]);
+  assert.equal(items[0].exact, 200 * 1.1 / 50);
+  assert.equal(items[0].order, Math.ceil(200 * 1.1 / 50)); // 5 bags
+  assert.deepEqual([items[1].kind, items[1].name, items[1].order], ["custom", "BackerOn screws", Math.ceil(200 * 1.1 / 75)]); // 3 tubs
+});
+
+test("the job's installMortars override swaps which mortar a linked row uses", () => {
+  const s = normalizeSettings(undefined);
+  const cat = s.catalog;
+  const hardie = cat.companies.find((c) => c.name === "James Hardie").underlayments.find((u) => u.name === "HardieBacker");
+  const defId = hardie.install[0].id;
+  const p = hb({ underlay: { checked: true, product: "HardieBacker", manual: "", install: true, installMortars: { [defId]: "Schluter All Set" } } });
+  const items = getUnderlayInstall(p, s);
+  assert.equal(items[0].name, "Schluter All Set");
+  assert.equal(items[0].unit, s.mortars["Schluter All Set"].unit);
+});
+
+test("getUnderlayInstall requires the extra checkbox, a checked underlayment, and real sq ft", () => {
+  const s = normalizeSettings(undefined);
+  assert.equal(getUnderlayInstall(hb({ underlay: { checked: true, product: "HardieBacker", manual: "", install: false } }), s), null);
+  assert.equal(getUnderlayInstall(hb({ underlay: { checked: false, product: "HardieBacker", manual: "", install: true } }), s), null);
+  assert.equal(getUnderlayInstall(hb({ qty: "" }), s), null);
+  assert.equal(getUnderlayInstall(hb({ qtyType: "count", qty: "40" }), s), null);
+  // A product with no install materials defined yields null even when checked.
+  assert.equal(getUnderlayInstall(hb({ underlay: { checked: true, product: "RedGard Uncoupling Membrane", manual: "", install: true } }), s), null);
+});
+
+test("rows with no coverage, and mortar rows with no product picked, are skipped", () => {
+  const s = normalizeSettings(undefined);
+  s.catalog.companies.forEach((co) => co.underlayments.forEach((u) => { if (u.name === "HardieBacker") u.install = u.install.map((m) => m.kind === "mortar" ? { ...m, product: "" } : m); }));
+  const s2 = { ...s, ...resolveCatalog(s.catalog) };
+  assert.deepEqual(getUnderlayInstall(hb(), s2).map((m) => m.name), ["BackerOn screws"]);
+  s2.catalog.companies.forEach((co) => co.underlayments.forEach((u) => { if (u.name === "HardieBacker") u.install = u.install.map((m) => ({ ...m, coverage: 0 })); }));
+  const s3 = { ...s2, ...resolveCatalog(s2.catalog) };
+  assert.equal(getUnderlayInstall(hb(), s3), null);
+});
+
+test("a stored pre-link install item (no kind) normalizes to a custom row with its fields intact", () => {
+  const seeded = seedCatalog(mergeSettings(undefined));
+  const legacyItem = { id: "old1", name: "Backer mortar", coverage: 40, unit: "bags", price: 12 };
+  const legacy = { companies: seeded.companies.map((co) => ({ ...co, underlayments: co.underlayments.map((u) => u.name === "HardieBacker" ? { ...u, install: [legacyItem] } : u) })) };
+  const norm = normalizeCatalog(legacy);
+  const hardie = norm.companies.find((c) => c.name === "James Hardie").underlayments.find((u) => u.name === "HardieBacker");
+  assert.deepEqual(hardie.install, [{ id: "old1", kind: "custom", name: "Backer mortar", coverage: 40, unit: "bags", price: 12 }]);
+});
+
+test("backfill: a stored catalog without the install field gains the seed defaults once", () => {
+  const seeded = seedCatalog(mergeSettings(undefined));
+  const legacy = { companies: seeded.companies.map((co) => ({ ...co, underlayments: co.underlayments.map(({ install, ...u }) => u) })) };
+  assert.equal(catalogHasSeedUnderlayments(legacy), false);
+  const normalized = normalizeCatalog(legacy);
+  assert.equal(catalogHasSeedUnderlayments(normalized), true);
+  const hardie = normalized.companies.find((c) => c.name === "James Hardie").underlayments.find((u) => u.name === "HardieBacker");
+  assert.deepEqual(hardie.install.map((m) => m.kind === "mortar" ? m.product : m.name), ["ProLite", "BackerOn screws"]);
+  // A deliberately cleared list stays cleared — [] is "defined", not "missing".
+  const cleared = { companies: normalized.companies.map((co) => ({ ...co, underlayments: co.underlayments.map((u) => ({ ...u, install: [] })) })) };
+  assert.equal(catalogHasSeedUnderlayments(cleared), true);
+  const renorm = normalizeCatalog(cleared);
+  assert.deepEqual(renorm.companies.find((c) => c.name === "James Hardie").underlayments.find((u) => u.name === "HardieBacker").install, []);
 });

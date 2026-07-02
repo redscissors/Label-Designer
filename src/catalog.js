@@ -91,6 +91,38 @@ export function getUnderlay(p, s) {
   return { exact: ex, order: Math.ceil(ex), unit: u.unit, price: num(u.price), product: p.underlay.product };
 }
 
+// The extra materials to put the underlayment itself down (mortar bed, screws),
+// opted into per job via the second checkbox. Each rides the same flat sq ft
+// coverage as the underlayment; real square footage is required — a manual
+// underlayment total carries no sq ft to scale from. Items with no coverage set
+// (and mortar rows with no product picked) are skipped rather than half-computed.
+//
+// A mortar row resolves unit/price from the mortar catalog by name — the job
+// may swap which mortar via p.underlay.installMortars[def.id] — and is returned
+// with kind "mortar" so the caller merges its quantity into the job's mortar
+// totals instead of the underlayment column.
+export function getUnderlayInstall(p, s) {
+  if (p.type === "misc" || !p.underlay?.checked || !p.underlay?.install) return null;
+  if (p.qtyType !== "sqft") return null;
+  const sqft = num(p.qty); if (!sqft) return null;
+  const defs = (s.underlayments?.[p.underlay.product]?.install || []).filter((m) => num(m.coverage) > 0);
+  if (!defs.length) return null;
+  const waste = 1 + num(s.wastePct) / 100;
+  const out = [];
+  for (const d of defs) {
+    const exact = sqft * waste / num(d.coverage);
+    if (d.kind === "mortar") {
+      const name = p.underlay.installMortars?.[d.id] || d.product;
+      if (!name) continue;
+      const m = s.mortars[name];
+      out.push({ kind: "mortar", defId: d.id, name, exact, order: Math.ceil(exact), unit: m?.unit ?? "units", price: num(m?.price) });
+    } else {
+      out.push({ kind: "custom", defId: d.id, name: d.name, exact, order: Math.ceil(exact), unit: d.unit, price: num(d.price) });
+    }
+  }
+  return out.length ? out : null;
+}
+
 // --- Catalog (Company → Product) — ADR 0002 ----------------------------------
 // The catalog is the source of truth for which grout/mortar products exist and
 // their numbers. Jobs link to a product by NAME only; the math resolves a name
@@ -120,10 +152,24 @@ const SEED_COMPANIES = [
 // 1/8" roll is ~54 sq ft). `types` restricts which flooring types offer it — an
 // empty list would mean "all types". The rest of each category's underlayments
 // are added by the team through the Settings catalog editor.
+//
+// `install` lists the extra materials it takes to put the underlayment itself
+// down. A `kind: "mortar"` row links to a catalog mortar BY NAME (unit and
+// price resolve from that mortar; only the flat under-the-board sq ft coverage
+// lives here) so its quantity combines with the job's other mortar of the same
+// name. A `kind: "custom"` row (screws, tape) is self-contained. Coverage
+// numbers are first-pass estimates: ~50 sq ft per mortar bag with a 1/4"
+// trowel, a BackerOn tub at ~2.3 screws/sq ft (8" spacing) — calibrate in
+// Settings.
 const SEED_UNDERLAYMENTS = [
-  { company: "Schluter", name: "Ditra Underlayment Uncoupling Membrane", coverage: 54, unit: "rolls", price: 0, types: ["tile"] },
+  { company: "Schluter", name: "Ditra Underlayment Uncoupling Membrane", coverage: 54, unit: "rolls", price: 0, types: ["tile"], install: [
+    { kind: "mortar", product: "Schluter All Set", coverage: 50 },
+  ] },
   { company: "Custom Building Products", name: "RedGard Uncoupling Membrane", coverage: 54, unit: "rolls", price: 0, types: ["tile"] },
-  { company: "James Hardie", name: "HardieBacker", coverage: 15, unit: "sheets", price: 0, types: ["tile"] },
+  { company: "James Hardie", name: "HardieBacker", coverage: 15, unit: "sheets", price: 0, types: ["tile"], install: [
+    { kind: "mortar", product: "ProLite", coverage: 50 },
+    { kind: "custom", name: "BackerOn screws", coverage: 75, unit: "tubs", price: 0 },
+  ] },
   { company: "Wedi", name: "Wedi S-Dry", coverage: 100, unit: "rolls", price: 0, types: ["tile"] },
   { company: "Fortifiber", name: "Aquabar B", coverage: 500, unit: "rolls", price: 0, types: ["hardwood"] },
   { company: "MP Global", name: "FloorMuffler UltraSeal", coverage: 100, unit: "rolls", price: 0, types: ["hardwood", "laminate"] },
@@ -132,7 +178,13 @@ const SEED_UNDERLAYMENTS = [
 
 const groutFields = (g) => ({ coverage: g?.coverage ?? 0, unit: g?.unit ?? "units", price: g?.price ?? 0 });
 const mortarFields = (m) => ({ tier1: m?.tier1 ?? 0, tier2: m?.tier2 ?? 0, tier3: m?.tier3 ?? 0, unit: m?.unit ?? "units", price: m?.price ?? 0 });
-const underlayFields = (u) => ({ coverage: u?.coverage ?? 0, unit: u?.unit ?? "rolls", price: u?.price ?? 0, types: (Array.isArray(u?.types) ? u.types : []).filter((t) => FLOOR_TYPES.includes(t)) });
+// Items stored before the mortar link existed have no `kind` — they normalize
+// to "custom" with their fields intact.
+const installItem = (m) => m?.kind === "mortar"
+  ? ({ id: m?.id || cid(), kind: "mortar", product: String(m?.product ?? "").trim(), coverage: m?.coverage ?? 0 })
+  : ({ id: m?.id || cid(), kind: "custom", name: String(m?.name ?? "").trim(), coverage: m?.coverage ?? 0, unit: m?.unit ?? "units", price: m?.price ?? 0 });
+const underlayFields = (u) => ({ coverage: u?.coverage ?? 0, unit: u?.unit ?? "rolls", price: u?.price ?? 0, types: (Array.isArray(u?.types) ? u.types : []).filter((t) => FLOOR_TYPES.includes(t)), install: (Array.isArray(u?.install) ? u.install : []).map(installItem) });
+const seedInstallFor = (name) => SEED_UNDERLAYMENTS.find((u) => u.install && normName(u.name) === normName(name))?.install;
 const seedUnderlay = (u) => ({ id: cid(), name: u.name, enabled: true, ...underlayFields(u) });
 const seedUnderlaysFor = (companyName) => SEED_UNDERLAYMENTS.filter((u) => u.company === companyName).map(seedUnderlay);
 
@@ -166,7 +218,10 @@ export function seedCatalog(flat) {
 
 const normGroutProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...groutFields(p) });
 const normMortarProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...mortarFields(p) });
-const normUnderlayProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...underlayFields(p) });
+// A stored product with NO `install` key predates the install-materials field:
+// backfill the seed defaults by name (one-time — once persisted the key exists,
+// so a team that clears the list keeps it cleared).
+const normUnderlayProduct = (p) => ({ id: p?.id || cid(), name: p?.name || "", enabled: p?.enabled !== false, ...underlayFields(p?.install === undefined ? { ...p, install: seedInstallFor(p?.name) } : p) });
 
 // Starter underlayments are merged by NAME: any SEED_UNDERLAYMENTS entry whose
 // name is missing from the whole catalog is added under its seed company
@@ -200,11 +255,12 @@ export function normalizeCatalog(catalog) {
   return { companies: backfillUnderlayments(companies) };
 }
 
-// True when the stored catalog already contains every starter underlayment —
-// used by the loader to decide whether the merged-in seeds need persisting.
+// True when the stored catalog already contains every starter underlayment
+// (including install-material defaults on the ones that seed them) — used by
+// the loader to decide whether the merged-in seeds need persisting.
 export const catalogHasSeedUnderlayments = (catalog) => {
-  const have = new Set((catalog?.companies || []).flatMap((co) => (co.underlayments || []).map((p) => normName(p.name))));
-  return SEED_UNDERLAYMENTS.every((u) => have.has(normName(u.name)));
+  const have = new Map((catalog?.companies || []).flatMap((co) => (co.underlayments || []).map((p) => [normName(p.name), p])));
+  return SEED_UNDERLAYMENTS.every((u) => { const p = have.get(normName(u.name)); return p && (!u.install || p.install !== undefined); });
 };
 
 // Names are matched case- and whitespace-insensitively, consistent with how a
