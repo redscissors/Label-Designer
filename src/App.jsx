@@ -26,6 +26,19 @@ const GROUT_COLORS = {
 };
 const colorsFor = (groutName) => GROUT_COLORS[groutName] || DEFAULT_COLORS;
 
+// A native select sizes to its longest option (or its container), not the
+// selected one — an invisible twin of the selected label sets the width here.
+const FitSelect = ({ display, className = "", sm, children, ...rest }) => {
+  const pad = sm ? "pl-1.5 pr-5 py-0.5 text-xs" : "pl-2 pr-6 py-1.5 text-sm";
+  return (
+    <span className={`relative inline-block max-w-full align-middle ${className}`}>
+      <span aria-hidden="true" className={`invisible block truncate whitespace-pre border border-transparent ${pad}`}>{display || " "}</span>
+      <select {...rest} className={`ft-field absolute inset-0 w-full h-full appearance-none rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${pad}`}>{children}</select>
+      <ChevronDown size={sm ? 11 : 13} className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-slate-400" />
+    </span>
+  );
+};
+
 const ATT_BUCKET = "attachments";
 const SHARED_SETTINGS_ID = "singleton";
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
@@ -33,11 +46,11 @@ const money = (n) => `$${(n || 0).toLocaleString(undefined, { minimumFractionDig
 const blobToDataURL = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
 const dataURLToBlob = (dataURL) => { const [meta, b64] = String(dataURL).split(","); const mime = (meta.match(/:(.*?);/) || [])[1] || "application/octet-stream"; const bin = atob(b64 || ""); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i); return new Blob([arr], { type: mime }); };
 
-const newProduct = () => ({ id: uid(), type: "tile", L: "", W: "", thickness: "0.375", sizeText: "", brandColor: "", priceSqft: "", qtyType: "sqft", qty: "", note: "", grout: { checked: false, product: "PermaColor Select", color: "", joint: 0.125, manual: "" }, mortar: { checked: false, product: "ProLite", manual: "" }, underlay: { checked: false, product: "", manual: "", install: false, installMortars: {} } });
+const newProduct = () => ({ id: uid(), type: "tile", L: "", W: "", thickness: "0.375", sizeText: "", brandColor: "", priceSqft: "", qtyType: "sqft", qty: "", note: "", grout: { checked: false, product: "PermaColor Select", color: "", joint: 0.125, manual: "" }, mortar: { checked: false, product: "ProLite", manual: "" }, underlay: { checked: false, product: "", manual: "", install: false, installMortars: {}, installSkip: {} } });
 const newArea = () => ({ id: uid(), name: "New Area", note: "", products: [newProduct()] });
 const newCustomer = () => ({ id: uid(), name: "New Customer", address: "", phone: "", email: "", notes: "", createdAt: Date.now(), categories: [], versions: [], attachments: [] });
 
-const normP = (p) => ({ id: p.id || uid(), type: TYPES.includes(p.type) ? p.type : "tile", L: p.L ?? "", W: p.W ?? "", thickness: p.thickness ?? "0.375", sizeText: p.sizeText ?? (p.size || ""), brandColor: p.brandColor ?? [p.brand, p.color].filter(Boolean).join(" / "), priceSqft: p.priceSqft ?? "", qtyType: p.qtyType === "count" ? "count" : "sqft", qty: p.qty ?? "", note: p.note ?? "", grout: { checked: !!p.grout?.checked, product: p.grout?.product || "PermaColor Select", color: p.grout?.color || "", joint: p.grout?.joint ?? 0.125, manual: p.grout?.manual ?? "" }, mortar: { checked: !!p.mortar?.checked, product: p.mortar?.product || "ProLite", manual: p.mortar?.manual ?? "" }, underlay: { checked: !!p.underlay?.checked, product: p.underlay?.product || "", manual: p.underlay?.manual ?? "", install: !!p.underlay?.install, installMortars: p.underlay?.installMortars || {} } });
+const normP = (p) => ({ id: p.id || uid(), type: TYPES.includes(p.type) ? p.type : "tile", L: p.L ?? "", W: p.W ?? "", thickness: p.thickness ?? "0.375", sizeText: p.sizeText ?? (p.size || ""), brandColor: p.brandColor ?? [p.brand, p.color].filter(Boolean).join(" / "), priceSqft: p.priceSqft ?? "", qtyType: p.qtyType === "count" ? "count" : "sqft", qty: p.qty ?? "", note: p.note ?? "", grout: { checked: !!p.grout?.checked, product: p.grout?.product || "PermaColor Select", color: p.grout?.color || "", joint: p.grout?.joint ?? 0.125, manual: p.grout?.manual ?? "" }, mortar: { checked: !!p.mortar?.checked, product: p.mortar?.product || "ProLite", manual: p.mortar?.manual ?? "" }, underlay: { checked: !!p.underlay?.checked, product: p.underlay?.product || "", manual: p.underlay?.manual ?? "", install: !!p.underlay?.install, installMortars: p.underlay?.installMortars || {}, installSkip: p.underlay?.installSkip || {} } });
 const normA = (a) => ({ id: a.id || uid(), name: a.name || "Area", note: a.note || "", products: (a.products || [{}]).map(normP) });
 const normC = (c) => ({ ...c, categories: (c.categories || []).map(normA), versions: c.versions || [], attachments: c.attachments || [] });
 
@@ -63,6 +76,7 @@ export default function App({ user, onSignOut }) {
   // follows the pointer imperatively (no re-render per move); state only changes
   // when the drop target changes, to redraw the insertion bar / area highlight.
   const [drag, setDrag] = useState(null);
+  const [insOpen, setInsOpen] = useState({});
   const mainRef = useRef(null);
   const fileRef = useRef(null);
   const attRef = useRef(null);
@@ -628,47 +642,72 @@ export default function App({ user, onSignOut }) {
                         const U = getUnderlay(p, settings), uEx = underlayExact(p, settings);
                         const installDefs = settings.underlayments[p.underlay.product]?.install || [];
                         const INS = getUnderlayInstall(p, settings);
+                        const insById = new Map((INS || []).map((m) => [m.defId, m]));
+                        const insIncluded = installDefs.filter((d) => !p.underlay.installSkip?.[d.id]).length;
+                        const insExpanded = !!insOpen[p.id];
                         const underlayNames = offeredUnderlayments(settings.catalog, p.type);
                         const underlayOpts = p.underlay.product && !underlayNames.includes(p.underlay.product) ? [p.underlay.product, ...underlayNames] : underlayNames;
                         const underlayUnit = U ? U.unit : settings.underlayments[p.underlay.product]?.unit;
                         const toggleUnderlay = () => updProduct(a.id, p.id, { underlay: { ...p.underlay, checked: !p.underlay.checked, product: p.underlay.checked ? p.underlay.product : (p.underlay.product || underlayNames[0] || "") } });
                         const underlayCard = (
                           <div className={`rounded-md border px-2.5 py-1.5 ${p.underlay.checked ? "border-indigo-200 bg-indigo-50/40" : "border-slate-100 bg-white"}`}>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                               <button onClick={toggleUnderlay} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.underlay.checked ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.underlay.checked && <Check size={12} />}</button>
-                              <span className="text-sm font-medium flex-1">{underlayLabel(p.type)}</span>
-                              {p.underlay.checked && <span className="flex items-center gap-1 text-sm text-indigo-700 shrink-0">{uEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{uEx.toFixed(2)} →</span>}<input type="number" value={U ? String(U.order) : ""} onChange={(e) => updProduct(a.id, p.id, { underlay: { ...p.underlay, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 ft-field" /><span className="font-semibold">{underlayUnit}</span></span>}
-                            </div>
-                            {p.underlay.checked && (
-                              <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
-                                {underlayOpts.length > 0 ? (
-                                  <select value={p.underlay.product} onChange={(e) => updProduct(a.id, p.id, { underlay: { ...p.underlay, product: e.target.value } })} className={inp + " flex-1 min-w-[7rem]"}>{!p.underlay.product && <option value="">Select…</option>}{underlayOpts.map((u) => <option key={u} value={u}>{u}</option>)}</select>
-                                ) : (
-                                  <div className="w-full text-xs text-amber-500">No {underlayLabel(p.type).toLowerCase()} products for {TLBL[p.type]} yet — add them in Settings.</div>
-                                )}
-                                {underlayOpts.length > 0 && !U && <div className="w-full text-xs text-amber-500">Enter Sq Ft to calculate, or type a total above.</div>}
-                              </div>
-                            )}
-                            {p.underlay.checked && installDefs.length > 0 && (
-                              <div className="mt-1.5 flex items-start gap-2">
-                                <button onClick={() => updProduct(a.id, p.id, { underlay: { ...p.underlay, install: !p.underlay.install } })} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.underlay.install ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.underlay.install && <Check size={12} />}</button>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm">Install materials <span className="text-xs text-slate-400">({installDefs.map((m) => m.kind === "mortar" ? (m.product || "mortar") : m.name).join(", ")})</span></div>
-                                  {p.underlay.install && (INS ? (
-                                    <div className="text-xs text-indigo-700 font-medium">{INS.map((m) => `${m.name} → ${m.order} ${m.unit} (${m.exact.toFixed(2)})`).join(" · ")}</div>
-                                  ) : (
-                                    <div className="text-xs text-amber-500">{p.qtyType === "sqft" && num(p.qty) > 0 ? "Set install-material coverage in Settings to calculate." : "Enter Sq Ft to calculate install materials."}</div>
-                                  ))}
-                                  {p.underlay.install && installDefs.filter((d) => d.kind === "mortar").map((d) => {
-                                    const cur = p.underlay.installMortars?.[d.id] || d.product;
-                                    const opts = cur && !mortarNames.includes(cur) ? [cur, ...mortarNames] : mortarNames;
-                                    return (
-                                      <select key={d.id} value={cur} onChange={(e) => updProduct(a.id, p.id, { underlay: { ...p.underlay, installMortars: { ...(p.underlay.installMortars || {}), [d.id]: e.target.value } } })} title="Mortar used to set the underlayment — combines with this job's other mortar totals" className={inp + " mt-1"}>
-                                        {!cur && <option value="">Select mortar…</option>}{opts.map((g) => <option key={g} value={g}>{g}</option>)}
-                                      </select>
-                                    );
-                                  })}
+                              <span className="text-sm font-medium">{underlayLabel(p.type)}</span>
+                              {p.underlay.checked && underlayOpts.length > 0 && (
+                                <div className="order-1 md:order-none basis-full md:basis-0 md:grow min-w-0">
+                                  <FitSelect value={p.underlay.product} display={p.underlay.product || "Select…"} onChange={(e) => updProduct(a.id, p.id, { underlay: { ...p.underlay, product: e.target.value } })}>{!p.underlay.product && <option value="">Select…</option>}{underlayOpts.map((u) => <option key={u} value={u}>{u}</option>)}</FitSelect>
                                 </div>
+                              )}
+                              {p.underlay.checked && <span className="ml-auto flex items-center gap-1 text-sm text-indigo-700 shrink-0">{uEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{uEx.toFixed(2)} →</span>}<input type="number" value={U ? String(U.order) : ""} onChange={(e) => updProduct(a.id, p.id, { underlay: { ...p.underlay, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 ft-field" /><span className="font-semibold">{underlayUnit}</span></span>}
+                              {p.underlay.checked && underlayOpts.length === 0 && <div className="order-last basis-full text-xs text-amber-500">No {underlayLabel(p.type).toLowerCase()} products for {TLBL[p.type]} yet — add them in Settings.</div>}
+                              {p.underlay.checked && underlayOpts.length > 0 && !U && <div className="order-last basis-full text-xs text-amber-500">Enter Sq Ft to calculate, or type a total above.</div>}
+                            </div>
+                            {p.underlay.checked && installDefs.length > 0 && (
+                              <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => updProduct(a.id, p.id, { underlay: { ...p.underlay, install: !p.underlay.install } })} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.underlay.install ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.underlay.install && <Check size={12} />}</button>
+                                  {p.underlay.install ? (
+                                    <button onClick={() => setInsOpen((o) => ({ ...o, [p.id]: !insExpanded }))} className="flex items-center gap-1 text-sm min-w-0">
+                                      {insExpanded ? <ChevronDown size={14} className="text-slate-400 shrink-0" /> : <ChevronRight size={14} className="text-slate-400 shrink-0" />}
+                                      Install materials
+                                      <span className="text-xs text-slate-400 whitespace-nowrap">{insIncluded < installDefs.length ? `${insIncluded} of ${installDefs.length}` : `${installDefs.length} item${installDefs.length === 1 ? "" : "s"}`}</span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-sm">Install materials <span className="text-xs text-slate-400">({installDefs.length})</span></span>
+                                  )}
+                                  {p.underlay.install && !insExpanded && (INS ? (
+                                    <span className="ml-auto text-xs text-indigo-700 font-medium truncate">{INS.slice(0, 3).map((m) => `${m.order} ${m.unit}`).join(" · ")}{INS.length > 3 ? ` +${INS.length - 3}` : ""}</span>
+                                  ) : insIncluded === 0 ? (
+                                    <span className="ml-auto text-xs text-slate-400">none included</span>
+                                  ) : (
+                                    <span className="ml-auto text-xs text-amber-500 truncate">{p.qtyType === "sqft" && num(p.qty) > 0 ? "No coverage set" : "Enter Sq Ft"}</span>
+                                  ))}
+                                </div>
+                                {p.underlay.install && insExpanded && (
+                                  <div className="mt-1 ml-7 space-y-1">
+                                    {installDefs.map((d) => {
+                                      const skipped = !!p.underlay.installSkip?.[d.id];
+                                      const item = insById.get(d.id);
+                                      const cur = p.underlay.installMortars?.[d.id] || d.product;
+                                      const opts = cur && !mortarNames.includes(cur) ? [cur, ...mortarNames] : mortarNames;
+                                      return (
+                                        <div key={d.id} className="flex items-center gap-2">
+                                          <button onClick={() => updProduct(a.id, p.id, { underlay: { ...p.underlay, installSkip: { ...(p.underlay.installSkip || {}), [d.id]: !skipped } } })} title={skipped ? "Skipped — click to include" : "Included — click to skip"} className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${skipped ? "border border-slate-300" : "bg-indigo-600 text-white"}`}>{!skipped && <Check size={10} />}</button>
+                                          {d.kind === "mortar" && !skipped ? (
+                                            <FitSelect sm value={cur} display={cur || "Select mortar…"} onChange={(e) => updProduct(a.id, p.id, { underlay: { ...p.underlay, installMortars: { ...(p.underlay.installMortars || {}), [d.id]: e.target.value } } })} title="Mortar used to set the underlayment — combines with this job's other mortar totals">
+                                              {!cur && <option value="">Select mortar…</option>}{opts.map((g) => <option key={g} value={g}>{g}</option>)}
+                                            </FitSelect>
+                                          ) : (
+                                            <span className={`text-xs truncate ${skipped ? "text-slate-400 line-through" : "text-slate-600"}`}>{d.kind === "mortar" ? (cur || "mortar") : d.name}</span>
+                                          )}
+                                          <span className="ml-auto text-xs whitespace-nowrap">{skipped ? <span className="text-slate-300">skipped</span> : item ? <><span className="text-slate-400">{item.exact.toFixed(2)} → </span><span className="text-indigo-700 font-semibold">{item.order} {item.unit}</span></> : <span className="text-slate-300">—</span>}</span>
+                                        </div>
+                                      );
+                                    })}
+                                    {!INS && insIncluded > 0 && <div className="text-xs text-amber-500">{p.qtyType === "sqft" && num(p.qty) > 0 ? "Set install-material coverage in Settings to calculate." : "Enter Sq Ft to calculate install materials."}</div>}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -689,80 +728,70 @@ export default function App({ user, onSignOut }) {
                               {a.products.length > 1 && <button onClick={() => delProduct(a.id, p.id)} className="shrink-0 flex items-center gap-1 text-xs text-slate-400 hover:text-red-500"><X size={13} /> remove</button>}
                             </div>
 
-                            <div className="flex items-stretch h-9 w-full rounded-md border border-slate-200 ft-fieldbar text-sm overflow-hidden">
+                            <div className="flex flex-wrap items-stretch w-full rounded-md border border-slate-200 ft-fieldbar text-sm overflow-hidden">
                               {p.type === "tile" ? (<>
-                                <div className="flex items-center shrink-0 pl-1">
+                                <div className="flex items-center shrink-0 h-9 pl-1">
                                   <input type="number" value={p.L} onChange={(e) => updProduct(a.id, p.id, { L: e.target.value })} className="w-10 px-1 py-1.5 text-center bg-transparent focus:outline-none focus:bg-white" placeholder="L" title="Length (in)" />
                                   <span className="text-slate-300 shrink-0">×</span>
                                   <input type="number" value={p.W} onChange={(e) => updProduct(a.id, p.id, { W: e.target.value })} className="w-10 px-1 py-1.5 text-center bg-transparent focus:outline-none focus:bg-white" placeholder="W" title="Width (in)" />
                                 </div>
-                                <select value={p.thickness} onChange={(e) => updProduct(a.id, p.id, { thickness: e.target.value })} className="shrink-0 border-l border-slate-200 px-1.5 py-1.5 bg-transparent focus:outline-none focus:bg-white" title="Thickness">{!thickKnown && <option value={p.thickness}>{p.thickness}"</option>}{THICK.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select>
-                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 border-l border-slate-200 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Brand / color" />
+                                <select value={p.thickness} onChange={(e) => updProduct(a.id, p.id, { thickness: e.target.value })} className="shrink-0 h-9 border-l border-slate-200 px-1.5 py-1.5 bg-transparent focus:outline-none focus:bg-white" title="Thickness">{!thickKnown && <option value={p.thickness}>{p.thickness}"</option>}{THICK.map((t) => <option key={t.v} value={t.v}>{t.label}</option>)}</select>
+                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 h-9 border-l border-slate-200 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Brand / color" />
                               </>) : p.type === "misc" ? (
-                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Description" />
+                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 h-9 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Description" />
                               ) : (<>
-                                <input value={p.sizeText} onChange={(e) => updProduct(a.id, p.id, { sizeText: e.target.value })} className="w-28 shrink-0 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder={p.type === "hardwood" ? "Width" : "Size"} title={p.type === "hardwood" ? "Plank width (in)" : "Size"} />
-                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 border-l border-slate-200 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Brand / color" />
+                                <input value={p.sizeText} onChange={(e) => updProduct(a.id, p.id, { sizeText: e.target.value })} className="w-28 shrink-0 h-9 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder={p.type === "hardwood" ? "Width" : "Size"} title={p.type === "hardwood" ? "Plank width (in)" : "Size"} />
+                                <input value={p.brandColor} onChange={(e) => updProduct(a.id, p.id, { brandColor: e.target.value })} className="flex-1 min-w-0 h-9 border-l border-slate-200 px-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder="Brand / color" />
                               </>)}
-                              <div className="relative w-20 shrink-0 border-l border-slate-200"><span className="absolute left-2 top-1.5 text-slate-400">$</span><input type="number" value={p.priceSqft} onChange={(e) => updProduct(a.id, p.id, { priceSqft: e.target.value })} className="w-full pl-5 pr-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder={p.type === "misc" ? "0.00" : "/sqft"} title={p.type === "misc" ? "Price (flat)" : "Price per sq ft"} /></div>
+                              {p.type !== "misc" && <div className="basis-full md:hidden" />}
+                              <div className={`relative w-20 shrink-0 h-9 border-slate-200 ${p.type === "misc" ? "border-l" : "border-t md:border-t-0 md:border-l"}`}><span className="absolute left-2 top-1.5 text-slate-400">$</span><input type="number" value={p.priceSqft} onChange={(e) => updProduct(a.id, p.id, { priceSqft: e.target.value })} className="w-full pl-5 pr-2 py-1.5 bg-transparent focus:outline-none focus:bg-white" placeholder={p.type === "misc" ? "0.00" : "/sqft"} title={p.type === "misc" ? "Price (flat)" : "Price per sq ft"} /></div>
+                              {p.type !== "misc" && (<>
+                                <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className="flex-1 md:flex-none md:w-16 min-w-0 h-9 border-l border-t md:border-t-0 border-slate-200 px-2 py-1.5 text-center bg-transparent focus:outline-none focus:bg-white" placeholder="0" title="Quantity" />
+                                <div className="flex shrink-0 h-9 border-l border-t md:border-t-0 border-slate-200 text-xs">{["sqft", "count"].map((t) => <button key={t} onClick={() => updProduct(a.id, p.id, { qtyType: t })} className={`px-2.5 ${p.qtyType === t ? "bg-indigo-600 text-white" : "ft-field text-slate-500 hover:bg-slate-50"}`}>{t === "sqft" ? "SF" : "EA"}</button>)}</div>
+                              </>)}
                             </div>
+                            {p.type !== "misc" && p.qtyType === "sqft" && sf > 0 && (
+                              <div className="mt-1.5 flex items-baseline justify-end gap-2 text-sm">
+                                <span className="text-xs text-slate-500">{sf} sf</span>
+                                {num(p.priceSqft) > 0 && <span className="font-semibold text-slate-700">{money(line)}</span>}
+                              </div>
+                            )}
 
                             {p.type === "tile" ? (
-                              <>
-                              <div className="border-t border-slate-100 pt-2.5 mt-2.5 grid grid-cols-1 md:grid-cols-[0.85fr_1.45fr_1fr] gap-2 items-start">
-                                {/* Quantity */}
-                                <div className="rounded-md border border-slate-100 bg-white px-2.5 py-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-semibold flex-1">Quantity</span>
-                                    {p.qtyType === "sqft" && num(p.priceSqft) > 0 && <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">{money(line)}</span>}
-                                  </div>
-                                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                                    <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className={inp + " !w-14"} placeholder="0" />
-                                    <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs shrink-0">{["sqft", "count"].map((t) => <button key={t} onClick={() => updProduct(a.id, p.id, { qtyType: t })} className={`px-2.5 py-1.5 ${p.qtyType === t ? "bg-indigo-600 text-white" : "ft-field text-slate-500 hover:bg-slate-50"}`}>{t === "sqft" ? "SF" : "EA"}</button>)}</div>
-                                    {p.qtyType === "sqft" && num(p.priceSqft) === 0 && <span className="text-xs text-slate-500 whitespace-nowrap">{sf} sf</span>}
-                                  </div>
-                                </div>
+                              <div className="mt-2 space-y-1.5">
                                 {/* Grout */}
                                 <div className={`rounded-md border px-2.5 py-1.5 ${p.grout.checked ? "border-indigo-200 bg-indigo-50/40" : "border-slate-100 bg-white"}`}>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                                     <button onClick={() => updProduct(a.id, p.id, { grout: { ...p.grout, checked: !p.grout.checked } })} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.grout.checked ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.grout.checked && <Check size={12} />}</button>
-                                    <span className="text-sm font-medium flex-1">Grout</span>
-                                    {p.grout.checked && <span className="flex items-center gap-1 text-sm text-indigo-700 shrink-0">{gEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{gEx.toFixed(2)} →</span>}<input type="number" value={G ? String(G.order) : ""} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 ft-field" /><span className="font-semibold">{G ? G.unit : settings.grouts[p.grout.product]?.unit}</span></span>}
+                                    <span className="text-sm font-medium">Grout</span>
+                                    {p.grout.checked && (
+                                      <div className="order-1 md:order-none basis-full md:basis-0 md:grow min-w-0 flex flex-wrap items-center gap-1.5">
+                                        <FitSelect value={p.grout.product} display={p.grout.product} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, product: e.target.value } })}>{groutOpts.map((g) => <option key={g} value={g}>{g}</option>)}</FitSelect>
+                                        <FitSelect value={p.grout.color} display={p.grout.color || "Color…"} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, color: e.target.value } })}><option value="">Color…</option>{colorOpts.map((c) => <option key={c}>{c}</option>)}</FitSelect>
+                                        <div className="flex rounded-md border border-slate-200 overflow-hidden text-[11px] shrink-0">{JOINTS.map((j) => <button key={j.v} onClick={() => updProduct(a.id, p.id, { grout: { ...p.grout, joint: j.v } })} className={`px-1 py-1.5 ${num(p.grout.joint) === j.v ? "bg-indigo-600 text-white" : "ft-field text-slate-500 hover:bg-slate-50"}`}>{j.label}</button>)}</div>
+                                      </div>
+                                    )}
+                                    {p.grout.checked && <span className="ml-auto flex items-center gap-1 text-sm text-indigo-700 shrink-0">{gEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{gEx.toFixed(2)} →</span>}<input type="number" value={G ? String(G.order) : ""} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 ft-field" /><span className="font-semibold">{G ? G.unit : settings.grouts[p.grout.product]?.unit}</span></span>}
+                                    {p.grout.checked && !G && <div className="order-last basis-full text-xs text-amber-500">Enter Sq Ft + tile L/W/thickness to calculate, or type a total above.</div>}
                                   </div>
-                                  {p.grout.checked && (
-                                    <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
-                                      <select value={p.grout.product} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, product: e.target.value } })} className={inp + " flex-[2] min-w-[7rem]"}>{groutOpts.map((g) => <option key={g} value={g}>{g}</option>)}</select>
-                                      <select value={p.grout.color} onChange={(e) => updProduct(a.id, p.id, { grout: { ...p.grout, color: e.target.value } })} className={inp + " flex-1 min-w-[6rem]"}><option value="">Color…</option>{colorOpts.map((c) => <option key={c}>{c}</option>)}</select>
-                                      <div className="flex rounded-md border border-slate-200 overflow-hidden text-[11px] shrink-0">{JOINTS.map((j) => <button key={j.v} onClick={() => updProduct(a.id, p.id, { grout: { ...p.grout, joint: j.v } })} className={`px-1 py-1.5 ${num(p.grout.joint) === j.v ? "bg-indigo-600 text-white" : "ft-field text-slate-500 hover:bg-slate-50"}`}>{j.label}</button>)}</div>
-                                      {!G && <div className="w-full text-xs text-amber-500">Enter Sq Ft + tile L/W/thickness to calculate, or type a total above.</div>}
-                                    </div>
-                                  )}
                                 </div>
                                 {/* Mortar */}
                                 <div className={`rounded-md border px-2.5 py-1.5 ${p.mortar.checked ? "border-indigo-200 bg-indigo-50/40" : "border-slate-100 bg-white"}`}>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                                     <button onClick={() => updProduct(a.id, p.id, { mortar: { ...p.mortar, checked: !p.mortar.checked } })} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${p.mortar.checked ? "bg-indigo-600 text-white" : "border border-slate-300"}`}>{p.mortar.checked && <Check size={12} />}</button>
-                                    <span className="text-sm font-medium flex-1">Mortar</span>
-                                    {p.mortar.checked && <span className="flex items-center gap-1 text-sm text-indigo-700 shrink-0">{mEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{mEx.toFixed(2)} →</span>}<input type="number" value={M ? String(M.order) : ""} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 ft-field" /><span className="font-semibold">{M ? M.unit : settings.mortars[p.mortar.product]?.unit}</span></span>}
+                                    <span className="text-sm font-medium">Mortar</span>
+                                    {p.mortar.checked && (
+                                      <div className="order-1 md:order-none basis-full md:basis-0 md:grow min-w-0">
+                                        <FitSelect value={p.mortar.product} display={p.mortar.product} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, product: e.target.value } })}>{mortarOpts.map((g) => <option key={g} value={g}>{g}</option>)}</FitSelect>
+                                      </div>
+                                    )}
+                                    {p.mortar.checked && <span className="ml-auto flex items-center gap-1 text-sm text-indigo-700 shrink-0">{mEx != null && <span className="text-slate-400 text-xs whitespace-nowrap">{mEx.toFixed(2)} →</span>}<input type="number" value={M ? String(M.order) : ""} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, manual: e.target.value } })} placeholder="—" title="Total — type to override the calculated amount" className="!w-12 text-right font-semibold rounded border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5 ft-field" /><span className="font-semibold">{M ? M.unit : settings.mortars[p.mortar.product]?.unit}</span></span>}
                                   </div>
-                                  {p.mortar.checked && (
-                                    <div className="mt-1.5">
-                                      <select value={p.mortar.product} onChange={(e) => updProduct(a.id, p.id, { mortar: { ...p.mortar, product: e.target.value } })} className={inp}>{mortarOpts.map((g) => <option key={g} value={g}>{g}</option>)}</select>
-                                    </div>
-                                  )}
                                 </div>
+                                {underlayCard}
                               </div>
-                              <div className="mt-2">{underlayCard}</div>
-                              </>
                             ) : p.type === "misc" ? null : (
-                              <>
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <input type="number" value={p.qty} onChange={(e) => updProduct(a.id, p.id, { qty: e.target.value })} className={inp + " !w-16 shrink-0"} placeholder="0" />
-                                <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs shrink-0">{["sqft", "count"].map((t) => <button key={t} onClick={() => updProduct(a.id, p.id, { qtyType: t })} className={`px-2.5 py-1.5 ${p.qtyType === t ? "bg-indigo-600 text-white" : "ft-field text-slate-500 hover:bg-slate-50"}`}>{t === "sqft" ? "SF" : "EA"}</button>)}</div>
-                                {p.qtyType === "sqft" && <span className="text-xs text-slate-500 whitespace-nowrap">{sf} sq ft{num(p.priceSqft) > 0 && <span className="text-slate-700 font-medium"> · {money(line)}</span>}</span>}
-                              </div>
                               <div className="mt-2">{underlayCard}</div>
-                              </>
                             )}
 
                             <div className="mt-2 flex items-end gap-2">

@@ -378,6 +378,16 @@ test("getUnderlayInstall requires the extra checkbox, a checked underlayment, an
   assert.equal(getUnderlayInstall(hb({ underlay: { checked: true, product: "RedGard Uncoupling Membrane", manual: "", install: true } }), s), null);
 });
 
+test("installSkip leaves an item out; skipping everything yields null", () => {
+  const s = normalizeSettings(undefined);
+  const hardie = s.catalog.companies.find((c) => c.name === "James Hardie").underlayments.find((u) => u.name === "HardieBacker");
+  const [mortarId, screwsId] = hardie.install.map((m) => m.id);
+  const one = getUnderlayInstall(hb({ underlay: { checked: true, product: "HardieBacker", manual: "", install: true, installMortars: {}, installSkip: { [mortarId]: true } } }), s);
+  assert.deepEqual(one.map((m) => m.name), ["BackerOn screws"]);
+  const none = getUnderlayInstall(hb({ underlay: { checked: true, product: "HardieBacker", manual: "", install: true, installMortars: {}, installSkip: { [mortarId]: true, [screwsId]: true } } }), s);
+  assert.equal(none, null);
+});
+
 test("rows with no coverage, and mortar rows with no product picked, are skipped", () => {
   const s = normalizeSettings(undefined);
   s.catalog.companies.forEach((co) => co.underlayments.forEach((u) => { if (u.name === "HardieBacker") u.install = u.install.map((m) => m.kind === "mortar" ? { ...m, product: "" } : m); }));

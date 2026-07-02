@@ -95,7 +95,8 @@ export function getUnderlay(p, s) {
 // opted into per job via the second checkbox. Each rides the same flat sq ft
 // coverage as the underlayment; real square footage is required — a manual
 // underlayment total carries no sq ft to scale from. Items with no coverage set
-// (and mortar rows with no product picked) are skipped rather than half-computed.
+// (and mortar rows with no product picked) are skipped rather than half-computed,
+// as are items the job opted out of via underlay.installSkip[def.id].
 //
 // A mortar row resolves unit/price from the mortar catalog by name — the job
 // may swap which mortar via p.underlay.installMortars[def.id] — and is returned
@@ -110,6 +111,7 @@ export function getUnderlayInstall(p, s) {
   const waste = 1 + num(s.wastePct) / 100;
   const out = [];
   for (const d of defs) {
+    if (p.underlay.installSkip?.[d.id]) continue;
     const exact = sqft * waste / num(d.coverage);
     if (d.kind === "mortar") {
       const name = p.underlay.installMortars?.[d.id] || d.product;
