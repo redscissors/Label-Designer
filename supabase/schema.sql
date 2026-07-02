@@ -165,6 +165,77 @@ create trigger shared_settings_updated_at
   before update on public.shared_settings
   for each row execute function public.set_updated_at();
 
+-- ---------------------------------------------------------------------------
+-- Versions (issue 003)
+--
+-- Saved snapshots used to live inside each customer's data jsonb, so every
+-- customer save re-uploaded the whole history. Each snapshot is now its own
+-- row; the customer blob no longer carries a versions array. `snapshot` holds
+-- the customer's categories (areas/products) at save time — nothing else.
+-- `auto` marks automatic end-of-session snapshots (the app keeps the newest 5
+-- per customer); named versions are unlimited and never auto-pruned.
+-- ---------------------------------------------------------------------------
+create table if not exists public.versions (
+  id          text primary key,
+  customer_id text not null references public.customers (id) on delete cascade,
+  label       text not null default '',
+  auto        boolean not null default false,
+  saved_at    timestamptz not null default now(),
+  snapshot    jsonb not null default '[]'::jsonb
+);
+
+create index if not exists versions_customer_idx on public.versions (customer_id, saved_at desc);
+
+alter table public.versions enable row level security;
+
+-- Access follows the customer row: see the customer -> see its versions;
+-- edit the customer -> save/delete its versions. Rows are immutable (no
+-- rename/edit feature), so there is deliberately no update policy.
+drop policy if exists "version select" on public.versions;
+create policy "version select" on public.versions
+  for select to authenticated using (
+    exists (select 1 from public.customers c
+            where c.id = customer_id
+              and (c.owner_id = auth.uid() or c.visibility = 'public')));
+
+drop policy if exists "version insert" on public.versions;
+create policy "version insert" on public.versions
+  for insert to authenticated with check (
+    exists (select 1 from public.customers c
+            where c.id = customer_id
+              and (c.owner_id = auth.uid() or c.visibility = 'public')));
+
+drop policy if exists "version delete" on public.versions;
+create policy "version delete" on public.versions
+  for delete to authenticated using (
+    exists (select 1 from public.customers c
+            where c.id = customer_id
+              and (c.owner_id = auth.uid() or c.visibility = 'public')));
+
+-- One-time migration: lift every customer's embedded versions array into rows
+-- (original ids, labels, and timestamps preserved; all hand-saved, so
+-- auto=false), then strip the array from the blob. Runs as the table owner in
+-- the SQL editor, so it reaches private customers of every user. Idempotent:
+-- `on conflict do nothing` skips already-migrated snapshots.
+insert into public.versions (id, customer_id, label, auto, saved_at, snapshot)
+select v->>'id',
+       c.id,
+       coalesce(nullif(v->>'label', ''), 'Version'),
+       false,
+       coalesce(to_timestamp((v->>'savedAt')::numeric / 1000.0), c.created_at),
+       coalesce(v->'snapshot', '[]'::jsonb)
+from public.customers c,
+     jsonb_array_elements(c.data->'versions') v
+where jsonb_typeof(c.data->'versions') = 'array'
+  and v->>'id' is not null
+on conflict (id) do nothing;
+
+-- Strip without bumping updated_at — the trigger would stamp every customer
+-- "just touched" and scramble the recency-first list on day one.
+alter table public.customers disable trigger customers_updated_at;
+update public.customers set data = data - 'versions' where data ? 'versions';
+alter table public.customers enable trigger customers_updated_at;
+
 -- One-time HITL seed (issue 002, slice 01): collapse per-user settings into the
 -- single shared record using the designated canonical user's current settings.
 -- `on conflict do nothing` makes this safe to re-run — it never clobbers an

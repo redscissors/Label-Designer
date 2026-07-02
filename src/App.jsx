@@ -54,6 +54,22 @@ const normP = (p) => ({ id: p.id || uid(), type: TYPES.includes(p.type) ? p.type
 const normA = (a) => ({ id: a.id || uid(), name: a.name || "Area", note: a.note || "", products: (a.products || [{}]).map(normP) });
 const normC = (c) => ({ ...c, categories: (c.categories || []).map(normA), versions: c.versions || [], attachments: c.attachments || [] });
 
+// The light list row: everything the sidebar draws/searches/sorts, projected out
+// of the jsonb server-side. Shared by the initial load and server-side search.
+const LIST_SELECT = "id, owner_id, visibility, archived, created_at, updated_at, name:data->>name, address:data->>address, phone:data->>phone, email:data->>email";
+const lightRow = (r) => ({
+  id: r.id, ownerId: r.owner_id, visibility: r.visibility, archived: !!r.archived,
+  createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
+  updatedAt: r.updated_at ? new Date(r.updated_at).getTime() : Date.now(),
+  name: r.name || "", address: r.address || "", phone: r.phone || "", email: r.email || "",
+  _full: false,
+});
+// Version metadata as held in memory — snapshots stay on the server until a
+// restore actually needs one.
+const vMeta = (r) => ({ id: r.id, label: r.label || "Version", auto: !!r.auto, savedAt: r.saved_at ? new Date(r.saved_at).getTime() : Date.now() });
+const AUTO_KEEP = 5;
+const RECENT_COUNT = 10;
+
 export default function App({ user, onSignOut }) {
   const [data, setData] = useState(() => ({ customers: [], settings: normalizeSettings() }));
   const [loading, setLoading] = useState(true);
@@ -61,6 +77,7 @@ export default function App({ user, onSignOut }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [showArchive, setShowArchive] = useState(false);
+  const [allOpen, setAllOpen] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [confirm, setConfirm] = useState(null);
@@ -84,6 +101,13 @@ export default function App({ user, onSignOut }) {
   const nameRef = useRef(null);
   const addAreaRef = useRef(null);
   const saveOkTimer = useRef(null);
+  // Auto-version bookkeeping: { id, json } — the open customer's categories as
+  // of open / last snapshot. dataRef mirrors state so the deselect effect and
+  // sign-out handler compare against the latest edits, not a stale closure.
+  const baselineRef = useRef(null);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const prevSelRef = useRef(null);
 
   // FLIP: slide the flooring-type labels (and product cards) to their new spots
   // when a render reorders them. Offset coords (not getBoundingClientRect) so
@@ -155,34 +179,47 @@ export default function App({ user, onSignOut }) {
   // server-side. The heavy detail (categories/products/versions/attachments)
   // stays on the server until a customer is opened (see loadDetail).
   const loadCustomers = async () => {
-    const { data: rows, error } = await supabase
-      .from("customers")
-      .select("id, owner_id, visibility, archived, created_at, name:data->>name, address:data->>address, phone:data->>phone, email:data->>email");
+    const { data: rows, error } = await supabase.from("customers").select(LIST_SELECT);
     if (error) throw error;
-    return (rows || []).map((r) => ({
-      id: r.id, ownerId: r.owner_id, visibility: r.visibility, archived: !!r.archived,
-      createdAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(),
-      name: r.name || "", address: r.address || "", phone: r.phone || "", email: r.email || "",
-      _full: false,
-    }));
+    return (rows || []).map(lightRow);
   };
 
   // Lazy-load one customer's full record on open, merging it into the light row.
   // The column-backed fields (ownerId/visibility/archived) are re-applied over
-  // the jsonb so they always win.
+  // the jsonb so they always win. Version metadata (never snapshots) loads
+  // alongside; snapshots are fetched one at a time on restore.
   const loadDetail = async (id) => {
     const existing = data.customers.find((c) => c.id === id);
     if (!existing || existing._full) return;
     try {
-      const { data: row, error } = await supabase.from("customers").select("data").eq("id", id).maybeSingle();
+      const [{ data: row, error }, { data: vRows, error: vErr }] = await Promise.all([
+        supabase.from("customers").select("data").eq("id", id).maybeSingle(),
+        supabase.from("versions").select("id, label, auto, saved_at").eq("customer_id", id).order("saved_at", { ascending: false }),
+      ]);
       if (error) throw error;
+      if (vErr) throw vErr;
       const full = normC(row?.data || {});
+      let versions = (vRows || []).map(vMeta);
+      // Safety net for a client deployed before the schema migration ran: lift
+      // any versions still embedded in this blob into the table (idempotent);
+      // custData strips them from the blob on the next content write.
+      if (full.versions.length) {
+        try {
+          await supabase.from("versions").upsert(full.versions.map((v) => ({
+            id: v.id || uid(), customer_id: id, label: v.label || "Version", auto: false,
+            saved_at: new Date(v.savedAt || Date.now()).toISOString(), snapshot: v.snapshot || [],
+          })), { onConflict: "id", ignoreDuplicates: true });
+          const have = new Set(versions.map((v) => v.id));
+          versions = [...versions, ...full.versions.filter((v) => !have.has(v.id)).map((v) => vMeta({ id: v.id, label: v.label, auto: false, saved_at: v.savedAt ? new Date(v.savedAt).toISOString() : null }))].sort((a, b) => b.savedAt - a.savedAt);
+        } catch (x) { /* best-effort */ }
+      }
       setData((prev) => ({
         ...prev,
         customers: prev.customers.map((c) => c.id === id
-          ? { ...c, ...full, id: c.id, ownerId: c.ownerId, visibility: c.visibility, archived: c.archived, createdAt: c.createdAt, _full: true }
+          ? { ...c, ...full, versions, id: c.id, ownerId: c.ownerId, visibility: c.visibility, archived: c.archived, createdAt: c.createdAt, _full: true }
           : c),
       }));
+      baselineRef.current = { id, json: JSON.stringify(full.categories) };
     } catch (e) { ping("Could not open customer — check connection"); }
   };
 
@@ -228,12 +265,41 @@ export default function App({ user, onSignOut }) {
   useEffect(() => { if (focusName && nameRef.current) { nameRef.current.focus(); nameRef.current.select?.(); const t = setTimeout(() => setFocusName(false), 1500); return () => clearTimeout(t); } }, [focusName]);
   useEffect(() => { const mq = window.matchMedia("(min-width: 768px)"); const on = () => setIsWide(mq.matches); on(); mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on); return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); }; }, []);
 
+  // Server-side search (debounced): ask the backend which customers match and
+  // merge any rows the client doesn't hold into the light list. The visible
+  // filter stays a client-side substring test over loaded rows — instant while
+  // typing, complete once the server responds — so search no longer depends on
+  // every row having been loaded up front.
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) return;
+    let stale = false;
+    const t = setTimeout(async () => {
+      try {
+        // Strip characters that would break PostgREST's or=() syntax.
+        const pat = "%" + q.replace(/[%_,()"\\]/g, " ").trim() + "%";
+        const ors = ["name", "address", "phone", "email"].map((f) => `data->>${f}.ilike.${pat}`).join(",");
+        const { data: rows, error } = await supabase.from("customers").select(LIST_SELECT).or(ors);
+        if (error) throw error;
+        if (stale) return;
+        const found = (rows || []).map(lightRow);
+        setData((prev) => {
+          const have = new Set(prev.customers.map((c) => c.id));
+          const fresh = found.filter((r) => !have.has(r.id));
+          return fresh.length ? { ...prev, customers: [...prev.customers, ...fresh] } : prev;
+        });
+      } catch (e) { /* loaded rows still cover the search */ }
+    }, 250);
+    return () => { stale = true; clearTimeout(t); };
+  }, [search]);
+
   const ping = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
   const flashSaved = () => { if (saveOkTimer.current) clearTimeout(saveOkTimer.current); setSaveOk(true); saveOkTimer.current = setTimeout(() => setSaveOk(false), 2000); };
 
   // Strip the column-backed and in-memory-only fields before writing to jsonb.
-  // (ownerId/visibility/archived are their own columns; _full is load state.)
-  const custData = ({ ownerId, visibility, archived, _full, ...rest }) => rest;
+  // (ownerId/visibility/archived are their own columns; versions live in their
+  // own table; _full is load state; updatedAt mirrors the updated_at column.)
+  const custData = ({ ownerId, visibility, archived, versions, _full, updatedAt, ...rest }) => rest;
 
   // Settings live in one shared record (ADR 0002) — last-write-wins across the
   // whole team, the same as a Public customer's data.
@@ -249,7 +315,7 @@ export default function App({ user, onSignOut }) {
   // an UPDATE of that one row's data. (owner_id / visibility are never sent here
   // so the guard trigger only ever fires for the explicit visibility toggle.)
   const updateCust = (id, patch) => {
-    const next = { ...data, customers: data.customers.map((c) => c.id === id ? { ...c, ...patch } : c) };
+    const next = { ...data, customers: data.customers.map((c) => c.id === id ? { ...c, ...patch, updatedAt: Date.now() } : c) };
     setData(next);
     const cust = next.customers.find((c) => c.id === id);
     (async () => { try { const { error } = await supabase.from("customers").update({ data: custData(cust) }).eq("id", id); if (error) throw error; flashSaved(); } catch (e) { ping("Save failed — export a backup"); } })();
@@ -260,7 +326,7 @@ export default function App({ user, onSignOut }) {
   const canDelete = (c) => c && (isOwner(c) || (c.visibility === "public" && Date.now() - (c.createdAt || 0) > 30 * 24 * 60 * 60 * 1000));
 
   const setVisibility = (id, visibility) => {
-    setData((prev) => ({ ...prev, customers: prev.customers.map((c) => c.id === id ? { ...c, visibility } : c) }));
+    setData((prev) => ({ ...prev, customers: prev.customers.map((c) => c.id === id ? { ...c, visibility, updatedAt: Date.now() } : c) }));
     (async () => { try { const { error } = await supabase.from("customers").update({ visibility }).eq("id", id); if (error) throw error; flashSaved(); } catch (e) { ping("Couldn't change sharing"); } })();
   };
 
@@ -268,13 +334,14 @@ export default function App({ user, onSignOut }) {
   // can't clobber a concurrent editor's changes. No owner check — anyone who can
   // edit a public job may archive/restore it (the guard trigger lets this pass).
   const setArchived = (id, archived) => {
-    setData((prev) => ({ ...prev, customers: prev.customers.map((c) => c.id === id ? { ...c, archived } : c) }));
+    setData((prev) => ({ ...prev, customers: prev.customers.map((c) => c.id === id ? { ...c, archived, updatedAt: Date.now() } : c) }));
     (async () => { try { const { error } = await supabase.from("customers").update({ archived }).eq("id", id); if (error) throw error; flashSaved(); } catch (e) { ping("Couldn't change archive status"); } })();
   };
 
   const addCustomer = () => {
-    const c = { ...newCustomer(), ownerId: user.id, visibility: "public", archived: false, _full: true };
+    const c = { ...newCustomer(), ownerId: user.id, visibility: "public", archived: false, updatedAt: Date.now(), _full: true };
     setData((prev) => ({ ...prev, customers: [c, ...prev.customers] }));
+    baselineRef.current = { id: c.id, json: JSON.stringify(c.categories) };
     setSelId(c.id); setSidebarOpen(false); setFocusName(true);
     (async () => { try { const { error } = await supabase.from("customers").insert({ id: c.id, owner_id: user.id, visibility: "public", data: custData(c), created_at: new Date(c.createdAt).toISOString() }); if (error) throw error; flashSaved(); } catch (e) { ping("Save failed — export a backup"); } })();
   };
@@ -396,10 +463,68 @@ export default function App({ user, onSignOut }) {
   const openAttachment = async (m) => { try { const { data: blob, error } = await supabase.storage.from(ATT_BUCKET).download(attPath(sel.id, m.id)); if (error) throw error; const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = m.name; a.click(); URL.revokeObjectURL(u); } catch (x) { ping("Could not load attachment"); } };
   const delAttachment = async (m) => { try { await supabase.storage.from(ATT_BUCKET).remove([attPath(sel.id, m.id)]); } catch (x) { } updateCust(sel.id, { attachments: (sel.attachments || []).filter((x) => x.id !== m.id) }); };
 
-  const startVersionName = () => { setVersionName(`Version ${(sel.versions?.length || 0) + 1}`); setNamingVersion(true); };
-  const confirmVersion = () => { const label = versionName.trim() || `Version ${(sel.versions?.length || 0) + 1}`; updateCust(sel.id, { versions: [{ id: uid(), label, savedAt: Date.now(), snapshot: JSON.parse(JSON.stringify(sel.categories)) }, ...(sel.versions || [])] }); setNamingVersion(false); setVersionName(""); ping("Version saved"); };
-  const loadVersion = (v) => { updateCust(sel.id, { categories: JSON.parse(JSON.stringify(v.snapshot)) }); setShowVersions(false); ping("Version loaded"); };
-  const delVersion = (vid) => updateCust(sel.id, { versions: sel.versions.filter((v) => v.id !== vid) });
+  // Versions are their own rows (issue 003) — saving/deleting one never touches
+  // the customer's data blob. In memory a customer carries version metadata
+  // only; the snapshot is fetched when a restore needs it.
+  const insertVersion = async (custId, label, auto, categories) => {
+    const v = { id: uid(), label, auto, savedAt: Date.now() };
+    const { error } = await supabase.from("versions").insert({ id: v.id, customer_id: custId, label, auto, saved_at: new Date(v.savedAt).toISOString(), snapshot: categories });
+    if (error) throw error;
+    return v;
+  };
+  const namedCount = (c) => (c.versions || []).filter((v) => !v.auto).length;
+  const startVersionName = () => { setVersionName(`Version ${namedCount(sel) + 1}`); setNamingVersion(true); };
+  const confirmVersion = async () => {
+    const label = versionName.trim() || `Version ${namedCount(sel) + 1}`;
+    const cust = sel;
+    setNamingVersion(false); setVersionName("");
+    try {
+      const v = await insertVersion(cust.id, label, false, cust.categories);
+      setData((prev) => ({ ...prev, customers: prev.customers.map((c) => c.id === cust.id ? { ...c, versions: [v, ...(c.versions || [])] } : c) }));
+      baselineRef.current = { id: cust.id, json: JSON.stringify(cust.categories) };
+      flashSaved(); ping("Version saved");
+    } catch (e) { ping("Save failed — check connection"); }
+  };
+  const loadVersion = async (v) => {
+    try {
+      const { data: row, error } = await supabase.from("versions").select("snapshot").eq("id", v.id).maybeSingle();
+      if (error || !row) throw error || new Error("missing");
+      updateCust(sel.id, { categories: (Array.isArray(row.snapshot) ? row.snapshot : []).map(normA) });
+      setShowVersions(false); ping("Version loaded");
+    } catch (e) { ping("Could not load version — check connection"); }
+  };
+  const delVersion = async (vid) => {
+    setData((prev) => ({ ...prev, customers: prev.customers.map((c) => c.id === sel.id ? { ...c, versions: (c.versions || []).filter((v) => v.id !== vid) } : c) }));
+    try { const { error } = await supabase.from("versions").delete().eq("id", vid); if (error) throw error; } catch (e) { ping("Delete failed"); }
+  };
+
+  // The safety net: when a work session on a customer ends (they get deselected,
+  // or the user signs out) and the selections changed since open / last
+  // snapshot, save an automatic version. Autos beyond the newest AUTO_KEEP are
+  // pruned; named versions are never touched. Baseline advances only on a
+  // successful save so a failed attempt is retried at the next deselect.
+  const autoSnapshot = async (id) => {
+    const c = dataRef.current.customers.find((x) => x.id === id);
+    const base = baselineRef.current;
+    if (!c || !c._full || !base || base.id !== id) return;
+    const json = JSON.stringify(c.categories);
+    if (json === base.json) return;
+    const label = "Auto — " + new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    try {
+      const v = await insertVersion(id, label, true, c.categories);
+      baselineRef.current = { id, json };
+      const drop = [v, ...(c.versions || []).filter((x) => x.auto)].sort((a, b) => b.savedAt - a.savedAt).slice(AUTO_KEEP).map((x) => x.id);
+      setData((prev) => ({ ...prev, customers: prev.customers.map((x) => x.id === id ? { ...x, versions: [v, ...(x.versions || [])].filter((vv) => !drop.includes(vv.id)) } : x) }));
+      if (drop.length) await supabase.from("versions").delete().in("id", drop);
+    } catch (e) { /* best-effort — the live data is already saved */ }
+  };
+  useEffect(() => {
+    const prev = prevSelRef.current;
+    prevSelRef.current = selId;
+    if (prev && prev !== selId) autoSnapshot(prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId]);
+  const handleSignOut = async () => { await autoSnapshot(selId); onSignOut(); };
 
   const dl = (blob, name) => { const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = name; a.click(); URL.revokeObjectURL(u); };
   const exportCSV = () => {
@@ -410,11 +535,23 @@ export default function App({ user, onSignOut }) {
   };
   const exportBackup = async () => {
     // The in-memory list is light, so pull every full record before backing up.
+    // Versions come from their own table and are re-embedded per customer, so
+    // the backup file keeps the original (pre-table) shape.
     let customers;
     try {
-      const { data: rows, error } = await supabase.from("customers").select("id, owner_id, visibility, archived, data, created_at");
+      const [{ data: rows, error }, { data: vRows, error: vErr }] = await Promise.all([
+        supabase.from("customers").select("id, owner_id, visibility, archived, data, created_at"),
+        supabase.from("versions").select("id, customer_id, label, auto, saved_at, snapshot"),
+      ]);
       if (error) throw error;
-      customers = (rows || []).map((r) => ({ ...normC(r.data || {}), id: r.id, ownerId: r.owner_id, visibility: r.visibility, archived: !!r.archived }));
+      if (vErr) throw vErr;
+      const byCust = {};
+      (vRows || []).forEach((r) => { (byCust[r.customer_id] = byCust[r.customer_id] || []).push({ id: r.id, label: r.label, auto: !!r.auto, savedAt: r.saved_at ? new Date(r.saved_at).getTime() : Date.now(), snapshot: r.snapshot || [] }); });
+      customers = (rows || []).map((r) => {
+        const c = { ...normC(r.data || {}), id: r.id, ownerId: r.owner_id, visibility: r.visibility, archived: !!r.archived };
+        const table = (byCust[r.id] || []).sort((a, b) => b.savedAt - a.savedAt);
+        return { ...c, versions: table.length ? table : c.versions };
+      });
     } catch (e) { ping("Backup failed — check connection"); return; }
     const attachments = {};
     for (const c of customers) for (const m of (c.attachments || [])) { try { const { data: blob } = await supabase.storage.from(ATT_BUCKET).download(attPath(c.id, m.id)); if (blob) attachments[m.id] = await blobToDataURL(blob); } catch (x) { } }
@@ -426,10 +563,15 @@ export default function App({ user, onSignOut }) {
     // can't collide with an existing public customer), then upload its files.
     const restored = [];
     for (const raw of (p.customers || [])) {
-      const c = { ...normC(raw), id: uid(), ownerId: user.id, visibility: "private", archived: false, _full: true };
+      const c = { ...normC(raw), id: uid(), ownerId: user.id, visibility: "private", archived: false, updatedAt: Date.now(), _full: true };
       const idMap = {};
       c.attachments = (c.attachments || []).map((m) => { const nid = uid(); idMap[m.id] = nid; return { ...m, id: nid }; });
       try { const { error } = await supabase.from("customers").insert({ id: c.id, owner_id: user.id, visibility: "private", data: custData(c), created_at: new Date(c.createdAt || Date.now()).toISOString() }); if (error) throw error; } catch (x) { continue; }
+      // Versions restore as table rows with fresh ids — the same path handles
+      // backups made before versions moved out of the blob.
+      const vRows = (c.versions || []).map((v) => ({ id: uid(), customer_id: c.id, label: v.label || "Version", auto: !!v.auto, saved_at: new Date(v.savedAt || Date.now()).toISOString(), snapshot: v.snapshot || [] }));
+      if (vRows.length) { try { const { error } = await supabase.from("versions").insert(vRows); if (error) throw error; } catch (x) { } }
+      c.versions = vRows.map((r) => vMeta(r));
       for (const m of c.attachments) { const val = p.attachments?.[Object.keys(idMap).find((k) => idMap[k] === m.id)]; if (!val) continue; try { await supabase.storage.from(ATT_BUCKET).upload(attPath(c.id, m.id), dataURLToBlob(val), { upsert: true }); } catch (x) { } }
       restored.push(c);
     }
@@ -447,15 +589,21 @@ export default function App({ user, onSignOut }) {
   const selCount = (sel?.categories || []).reduce((n, a) => n + a.products.length, 0);
   const sortCustomers = (list) => [...list].sort((a, b) => sortBy === "name" ? (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }) : (b.createdAt || 0) - (a.createdAt || 0));
   // When searching, span both active and archived (archived rows are badged in
-  // the list). With no search, the active list hides archived jobs and the
-  // archive view shows only them.
+  // the list). With no search, the list leads with the jobs anyone touched most
+  // recently; everything else sits below in groups (letters when sorted A–Z,
+  // age buckets when sorted Newest) behind an expandable "All customers".
   const q = search.trim().toLowerCase();
-  const filtered = data.customers.filter((c) => {
-    if (q) return [c.name, c.address, c.phone, c.email].some((f) => (f || "").toLowerCase().includes(q));
-    return showArchive ? c.archived : !c.archived;
-  });
-  const mineList = sortCustomers(filtered.filter((c) => c.ownerId === user.id));
-  const sharedList = sortCustomers(filtered.filter((c) => c.ownerId !== user.id));
+  const searchList = q ? sortCustomers(data.customers.filter((c) => [c.name, c.address, c.phone, c.email].some((f) => (f || "").toLowerCase().includes(q)))) : null;
+  const visible = data.customers.filter((c) => showArchive ? c.archived : !c.archived);
+  const recentList = !q && !showArchive ? [...visible].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, RECENT_COUNT) : [];
+  const recentIds = new Set(recentList.map((c) => c.id));
+  const restList = sortCustomers(visible.filter((c) => !recentIds.has(c.id)));
+  const allExpanded = allOpen ?? restList.length <= 25;
+  const groupOf = (c) => {
+    if (sortBy === "name") { const ch = ((c.name || "").trim()[0] || "#").toUpperCase(); return /[A-Z]/.test(ch) ? ch : "#"; }
+    const age = Date.now() - (c.createdAt || 0);
+    return age < 30 * 24 * 3600 * 1000 ? "This month" : age < 365 * 24 * 3600 * 1000 ? "This year" : "Older";
+  };
   const archivedCount = data.customers.filter((c) => c.archived).length;
 
   if (loading) return <div className="h-screen flex items-center justify-center text-slate-400">Loading…</div>;
@@ -513,12 +661,28 @@ export default function App({ user, onSignOut }) {
             <button onClick={addCustomer} className="w-full flex items-center justify-center gap-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2 transition"><Plus size={16} /> New Customer</button>
           </div>
           <div className="flex-1 overflow-y-auto px-1.5 pb-2">
-            {filtered.length === 0 && <div className="text-center text-sm text-slate-400 mt-8 px-4">{search ? "No matches" : "No customers yet"}</div>}
-            {mineList.map((c) => renderCustItem(c))}
-            {sharedList.length > 0 && (
-              <div className="mt-4 mb-1.5 px-2.5 ft-eyebrow text-[9px]">Shared with everyone</div>
-            )}
-            {sharedList.map((c) => renderCustItem(c))}
+            {q ? (<>
+              {searchList.length === 0 && <div className="text-center text-sm text-slate-400 mt-8 px-4">No matches</div>}
+              {searchList.map((c) => renderCustItem(c))}
+            </>) : (<>
+              {visible.length === 0 && <div className="text-center text-sm text-slate-400 mt-8 px-4">{showArchive ? "No archived jobs yet" : "No customers yet"}</div>}
+              {recentList.length > 0 && restList.length > 0 && <div className="mt-1 mb-1.5 px-2.5 ft-eyebrow text-[9px]">Recent</div>}
+              {recentList.map((c) => renderCustItem(c))}
+              {restList.length > 0 && recentList.length > 0 && (
+                <button onClick={() => setAllOpen(!allExpanded)} className="w-full flex items-center gap-1 mt-4 mb-1.5 px-2.5 ft-eyebrow text-[9px] hover:text-slate-600">
+                  {allExpanded ? <ChevronDown size={11} className="shrink-0" /> : <ChevronRight size={11} className="shrink-0" />} All customers ({restList.length})
+                </button>
+              )}
+              {(recentList.length === 0 || allExpanded) && restList.map((c, i) => {
+                const g = groupOf(c), prev = i > 0 ? groupOf(restList[i - 1]) : null;
+                return (
+                  <div key={c.id}>
+                    {g !== prev && <div className={`px-2.5 ft-eyebrow text-[9px] mb-1 ${i === 0 && recentList.length === 0 ? "mt-1" : "mt-3"}`}>{g}</div>}
+                    {renderCustItem(c)}
+                  </div>
+                );
+              })}
+            </>)}
           </div>
           <div className="p-2.5 border-t border-slate-100 space-y-2">
             <div className="flex gap-2">
@@ -531,7 +695,7 @@ export default function App({ user, onSignOut }) {
               <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-semibold shrink-0">{(user.email || "?").slice(0, 1).toUpperCase()}</div>
               <span className="truncate flex-1" title={user.email}>{user.email}</span>
               <span className="w-px h-4 bg-slate-200 shrink-0" />
-              <button onClick={onSignOut} title="Sign out" className="rounded-md border border-slate-200 hover:bg-slate-50 p-1.5 text-slate-500"><LogOut size={14} /></button>
+              <button onClick={handleSignOut} title="Sign out" className="rounded-md border border-slate-200 hover:bg-slate-50 p-1.5 text-slate-500"><LogOut size={14} /></button>
             </div>
           </div>
         </aside>
@@ -934,8 +1098,9 @@ export default function App({ user, onSignOut }) {
       {showVersions && sel && (
         <Modal onClose={() => setShowVersions(false)} title="Saved Versions">
           {(!sel.versions || sel.versions.length === 0) ? <p className="text-sm text-slate-400">No versions yet. Use "Version" to snapshot the current selections.</p> : (
-            <div className="space-y-2">{sel.versions.map((v) => (<div key={v.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><div className="flex-1"><div className="text-sm font-medium">{v.label}</div><div className="text-xs text-slate-400">{new Date(v.savedAt).toLocaleString()} · {v.snapshot.length} areas</div></div><button onClick={() => loadVersion(v)} className="text-sm rounded-lg bg-indigo-600 text-white px-3 py-1.5 hover:bg-indigo-700">Restore</button><button onClick={() => delVersion(v.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={15} /></button></div>))}</div>
+            <div className="space-y-2">{sel.versions.map((v) => (<div key={v.id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><div className="flex-1 min-w-0"><div className="text-sm font-medium flex items-center gap-1.5 truncate">{v.label}{v.auto && <span className="ft-eyebrow text-[8.5px] tracking-[.1em] bg-slate-100 rounded px-1.5 py-0.5 shrink-0">Auto</span>}</div><div className="text-xs text-slate-400">{new Date(v.savedAt).toLocaleString()}</div></div><button onClick={() => loadVersion(v)} className="text-sm rounded-lg bg-indigo-600 text-white px-3 py-1.5 hover:bg-indigo-700">Restore</button><button onClick={() => delVersion(v.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={15} /></button></div>))}</div>
           )}
+          <p className="text-xs text-slate-400 mt-4">Auto versions are saved when you leave a job after changing its selections — the newest {AUTO_KEEP} are kept. Named versions are kept until you delete them.</p>
         </Modal>
       )}
 
